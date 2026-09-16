@@ -74,10 +74,19 @@ export class AuthController {
       (req.headers['x-refresh-token'] as string);
 
     if (!rawToken) {
-      throw new UnauthorizedException('Refresh token cookie or header missing');
+      throw new UnauthorizedException('Invalid or expired session');
     }
 
-    const tokens = await this.authService.refresh(rawToken);
+    const ip = req.ip || req.socket.remoteAddress;
+    const userAgent = req.headers['user-agent'] as string | undefined;
+    const requestId =
+      (req.headers['x-request-id'] as string) || (req as any).id;
+
+    const tokens = await this.authService.refresh(rawToken, {
+      ip,
+      userAgent,
+      requestId,
+    });
     this.setRefreshTokenCookie(res, tokens.refreshToken);
 
     return {

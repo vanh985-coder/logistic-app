@@ -9,7 +9,13 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { PasswordService } from './password.service';
 import { TokenService, TokenPair } from './token.service';
-import { RegisterDto, LoginDto } from './dto/auth.dto';
+import {
+  RegisterDto,
+  LoginDto,
+  RegisterResponseDto,
+  LoginResponseDto,
+  UserProfileResponseDto,
+} from './dto/auth.dto';
 import { CompanyType, CompanyStatus, UserRole, UserStatus } from '@logix/shared';
 
 @Injectable()
@@ -39,7 +45,7 @@ export class AuthService {
    * Registers a new company and its initial administrator user.
    * Safe usage of unsafeGlobal as this is an unauthenticated initial bootstrap.
    */
-  async register(dto: RegisterDto) {
+  async register(dto: RegisterDto): Promise<RegisterResponseDto> {
     // 1. Verify taxCode uniqueness
     const existingCompany = await this.prisma.unsafeGlobal.company.findUnique({
       where: { taxCode: dto.taxCode },
@@ -96,48 +102,36 @@ export class AuthService {
       `Company registered successfully: ${result.company.id} (${result.company.name}) with Admin: ${result.user.id}`,
     );
 
+    // Return explicit response DTO (omits taxCode, status, timestamps)
     return {
+      message: 'Company registered successfully',
       company: {
         id: result.company.id,
         name: result.company.name,
-        taxCode: result.company.taxCode,
         type: result.company.type,
-        status: result.company.status,
-        createdAt: result.company.createdAt,
       },
       user: {
         id: result.user.id,
         email: result.user.email,
         fullName: result.user.fullName,
         role: result.user.role,
-        status: result.user.status,
-        createdAt: result.user.createdAt,
       },
     };
   }
 
   /**
    * Authenticates user, verifies password, and issues JWT access token + refresh token.
-   * Uses unsafeGlobal before tenant context is resolved.
+   * Employs constant-time dummy Argon2id verification when email is not found to prevent timing attacks.
    */
-  async login(dto: LoginDto): Promise<{
-    tokens: TokenPair;
-    user: {
-      id: string;
-      email: string;
-      fullName: string | null;
-      role: string;
-      companyId: string;
-      companyName: string;
-      companyStatus: string;
-    };
-  }> {
+  async login(dto: LoginDto): Promise<LoginResponseDto & { tokens: TokenPair }> {
     const user = await this.prisma.unsafeGlobal.user.findUnique({
       where: { email: dto.email.toLowerCase() },
       include: { company: true },
     });
 
     if (!user || user.deletedAt) {
+      // Anti-timing attack: run dummy Argon2id verification
+      await this.passwordService.verifyDummy(dto.password);
       throw new UnauthorizedException('Invalid email or password');
     }
 
@@ -162,7 +156,7 @@ export class AuthService {
       throw new ForbiddenException('Company registration was rejected');
     }
 
-    // Update lastLoginAt
+    // Update lastLoginAt asynchronously
     await this.prisma.unsafeGlobal.user.update({
       where: { id: user.id },
       data: { lastLoginAt: new Date() },
@@ -176,8 +170,10 @@ export class AuthService {
       email: user.email,
     });
 
+    // Return explicit response DTO (omits companyStatus and administrative internals)
     return {
       tokens,
+      accessToken: tokens.accessToken,
       user: {
         id: user.id,
         email: user.email,
@@ -185,7 +181,6 @@ export class AuthService {
         role: user.role,
         companyId: user.companyId,
         companyName: user.company.name,
-        companyStatus: user.company.status,
       },
     };
   }
@@ -193,8 +188,11 @@ export class AuthService {
   /**
    * Rotates a refresh token.
    */
-  async refresh(rawRefreshToken: string): Promise<TokenPair> {
-    return this.tokenService.rotateRefreshToken(rawRefreshToken);
+  async refresh(
+    rawRefreshToken: string,
+    meta?: { ip?: string; userAgent?: string; requestId?: string },
+  ): Promise<TokenPair> {
+    return this.tokenService.rotateRefreshToken(rawRefreshToken, meta);
   }
 
   /**
@@ -208,8 +206,9 @@ export class AuthService {
 
   /**
    * Retrieves profile of current user.
+   * Strips taxCode, lastLoginAt, userStatus, and companyStatus.
    */
-  async getMe(userId: string) {
+  async getMe(userId: string): Promise<UserProfileResponseDto> {
     const user = await this.prisma.unsafeGlobal.user.findUnique({
       where: { id: userId },
       include: {
@@ -217,9 +216,7 @@ export class AuthService {
           select: {
             id: true,
             name: true,
-            taxCode: true,
             type: true,
-            status: true,
           },
         },
       },
@@ -235,9 +232,11 @@ export class AuthService {
       fullName: user.fullName,
       phone: user.phone,
       role: user.role,
-      status: user.status,
-      lastLoginAt: user.lastLoginAt,
-      company: user.company,
+      company: {
+        id: user.company.id,
+        name: user.company.name,
+        type: user.company.type,
+      },
     };
   }
 }

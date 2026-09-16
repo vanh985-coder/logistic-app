@@ -86,10 +86,16 @@ export class TokenService {
 
   /**
    * Rotates a refresh token with Token Family tracking and 3-second Redis Grace Period.
+   * All failures return a uniform 'Invalid or expired session' to prevent defense mechanism disclosure (OAuth 2.0 BCP).
    */
-  async rotateRefreshToken(rawRefreshToken: string): Promise<TokenPair> {
+  async rotateRefreshToken(
+    rawRefreshToken: string,
+    meta?: { ip?: string; userAgent?: string; requestId?: string },
+  ): Promise<TokenPair> {
+    const GENERIC_ERROR = 'Invalid or expired session';
+
     if (!rawRefreshToken) {
-      throw new UnauthorizedException('Refresh token is required');
+      throw new UnauthorizedException(GENERIC_ERROR);
     }
 
     const tokenHash = this.hashToken(rawRefreshToken);
@@ -101,7 +107,14 @@ export class TokenService {
     });
 
     if (!tokenRecord) {
-      throw new UnauthorizedException('Invalid refresh token');
+      this.logger.warn({
+        msg: 'Refresh token not found in database',
+        tokenHashPrefix: tokenHash.substring(0, 10),
+        ip: meta?.ip,
+        userAgent: meta?.userAgent,
+        requestId: meta?.requestId,
+      });
+      throw new UnauthorizedException(GENERIC_ERROR);
     }
 
     // 2. Reuse Detection Check
@@ -118,9 +131,14 @@ export class TokenService {
       }
 
       // NO GRACE PERIOD -> ATTEMPTED REUSE DETECTED!
-      this.logger.error(
-        `[SECURITY ALERT] Refresh token reuse detected for family ${tokenRecord.familyId}, userId: ${tokenRecord.userId}. Revoking entire token family!`,
-      );
+      this.logger.error({
+        msg: '[SECURITY ALERT] Refresh token reuse detected. Revoking entire token family!',
+        familyId: tokenRecord.familyId,
+        userId: tokenRecord.userId,
+        ip: meta?.ip,
+        userAgent: meta?.userAgent,
+        requestId: meta?.requestId,
+      });
 
       // Revoke all tokens in family
       await this.prisma.unsafeGlobal.refreshToken.updateMany({
@@ -131,14 +149,21 @@ export class TokenService {
       // Invalidate Redis tenant cache
       await redisClient.del(`user:tenant:${tokenRecord.userId}`);
 
-      throw new UnauthorizedException(
-        'Refresh token reuse detected. All sessions in this family have been revoked.',
-      );
+      throw new UnauthorizedException(GENERIC_ERROR);
     }
 
     // 3. Check expiration
     if (tokenRecord.expiresAt < new Date()) {
-      throw new UnauthorizedException('Refresh token has expired');
+      this.logger.warn({
+        msg: 'Refresh token has expired',
+        familyId: tokenRecord.familyId,
+        userId: tokenRecord.userId,
+        expiresAt: tokenRecord.expiresAt,
+        ip: meta?.ip,
+        userAgent: meta?.userAgent,
+        requestId: meta?.requestId,
+      });
+      throw new UnauthorizedException(GENERIC_ERROR);
     }
 
     // 4. Mark current token as revoked
