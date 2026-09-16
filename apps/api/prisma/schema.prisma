@@ -21,7 +21,9 @@ enum CompanyStatus {
 }
 
 enum UserRole {
+  PLATFORM_ADMIN
   ADMIN
+  COMPANY_ADMIN
   SHIPPER_ADMIN
   SHIPPER_MEMBER
   FWD_ADMIN
@@ -75,6 +77,24 @@ model User {
   updatedAt    DateTime   @updatedAt
   deletedAt    DateTime?
 
+  refreshTokens RefreshToken[]
+
   @@index([companyId, status, createdAt(sort: Desc)])
   @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  familyId  String
+  isRevoked Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([tokenHash])
+  @@map("refresh_tokens")
 }

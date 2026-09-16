@@ -2,7 +2,9 @@ import { Controller, Get, Res, HttpStatus, Logger } from '@nestjs/common';
 import { Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { Public } from '../auth/decorators/public.decorator';
 
+@Public()
 @Controller('health')
 export class HealthController {
   private readonly logger = new Logger(HealthController.name);

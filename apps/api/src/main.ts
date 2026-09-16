@@ -6,6 +6,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { Logger } from 'nestjs-pino';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -17,6 +18,9 @@ async function bootstrap() {
 
   // Security headers & disabled x-powered-by
   app.use(helmet());
+
+  // Parse cookies (for HttpOnly refresh tokens)
+  app.use(cookieParser());
 
   // CORS whitelist
   const allowedOrigins = [

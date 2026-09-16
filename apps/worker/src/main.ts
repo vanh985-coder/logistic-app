@@ -3,7 +3,6 @@ dotenv.config();
 dotenv.config({ path: '../../.env' });
 
 import { Worker, Job } from 'bullmq';
-import { Redis } from 'ioredis';
 import pino from 'pino';
 
 const logger = pino({
