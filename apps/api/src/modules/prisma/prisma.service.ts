@@ -27,7 +27,10 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
   async isHealthy(): Promise<boolean> {
     try {
-      await this.$queryRaw`SELECT 1`;
+      await Promise.race([
+        this.$queryRaw`SELECT 1`,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('DB timeout')), 1000)),
+      ]);
       return true;
     } catch {
       return false;

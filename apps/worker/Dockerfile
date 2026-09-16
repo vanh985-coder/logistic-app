@@ -25,7 +25,8 @@ COPY --chown=workeruser:nodejs package.json pnpm-workspace.yaml pnpm-lock.yaml* 
 COPY --chown=workeruser:nodejs packages/ ./packages/
 COPY --chown=workeruser:nodejs apps/worker/package.json ./apps/worker/
 
-RUN pnpm install --prod --frozen-lockfile || pnpm install --prod
+COPY --chown=workeruser:nodejs --from=builder /app/node_modules ./node_modules
+COPY --chown=workeruser:nodejs --from=builder /app/apps/worker/node_modules ./apps/worker/node_modules
 COPY --chown=workeruser:nodejs --from=builder /app/packages/shared/dist ./packages/shared/dist
 COPY --chown=workeruser:nodejs --from=builder /app/packages/packing/dist ./packages/packing/dist
 COPY --chown=workeruser:nodejs --from=builder /app/apps/worker/dist ./apps/worker/dist

@@ -1,3 +1,7 @@
+import * as dotenv from 'dotenv';
+dotenv.config();
+dotenv.config({ path: '../../.env' });
+
 import { Worker, Job } from 'bullmq';
 import { Redis } from 'ioredis';
 import pino from 'pino';
@@ -5,7 +9,7 @@ import pino from 'pino';
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
   transport:
-    process.env.NODE_ENV !== 'production'
+    process.env.PINO_PRETTY === 'true'
       ? {
           target: 'pino-pretty',
           options: { colorize: true, translateTime: 'SYS:yyyy-mm-dd HH:MM:ss' },
@@ -63,5 +67,11 @@ async function shutdown() {
 
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
+process.on('SIGBREAK', shutdown);
+process.on('message', (msg) => {
+  if (msg === 'shutdown' || msg === 'SIGTERM') {
+    shutdown();
+  }
+});
 
 logger.info({ msg: 'Packing Worker listening on queue', queue: QUEUE_NAME });

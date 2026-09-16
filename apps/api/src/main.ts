@@ -1,3 +1,7 @@
+import * as dotenv from 'dotenv';
+dotenv.config();
+dotenv.config({ path: '../../.env' });
+
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { Logger } from 'nestjs-pino';

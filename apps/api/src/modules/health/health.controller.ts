@@ -1,10 +1,12 @@
-import { Controller, Get, Res, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Res, HttpStatus, Logger } from '@nestjs/common';
 import { Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 
 @Controller('health')
 export class HealthController {
+  private readonly logger = new Logger(HealthController.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
@@ -56,6 +58,7 @@ export class HealthController {
         },
       },
     };
+    this.logger.log(`Readiness status: ${responsePayload.status}. DB: ${responsePayload.services.database.status}, Redis: ${responsePayload.services.redis.status}`);
 
     if (isAllHealthy) {
       return res.status(HttpStatus.OK).json(responsePayload);

@@ -25,10 +25,20 @@ export class RedisService implements OnModuleDestroy {
 
   async isHealthy(): Promise<boolean> {
     try {
-      if (this.client.status !== 'ready' && this.client.status !== 'connecting') {
-        await this.client.connect().catch(() => {});
+      if (this.client.status !== 'ready') {
+        try {
+          await Promise.race([
+            this.client.connect(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Connect timeout')), 1000)),
+          ]);
+        } catch {
+          return false;
+        }
       }
-      const pong = await this.client.ping();
+      const pong = await Promise.race([
+        this.client.ping(),
+        new Promise<string>((_, reject) => setTimeout(() => reject(new Error('Ping timeout')), 1000)),
+      ]);
       return pong === 'PONG';
     } catch {
       return false;

@@ -13,7 +13,7 @@ export const pinoConfig: Params = {
   pinoHttp: {
     level: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
     transport:
-      process.env.NODE_ENV !== 'production'
+      process.env.PINO_PRETTY === 'true'
         ? {
             target: 'pino-pretty',
             options: {
@@ -28,12 +28,7 @@ export const pinoConfig: Params = {
       if (headerId && typeof headerId === 'string') return headerId;
       return randomUUID();
     },
-    autoLogging: {
-      ignore: (req) => {
-        // Do not spam logs with health checks
-        return req.url?.startsWith('/health') || false;
-      },
-    },
+    autoLogging: true,
     redact: [
       'req.headers.authorization',
       'req.headers.cookie',

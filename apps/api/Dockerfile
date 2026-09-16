@@ -26,10 +26,10 @@ COPY --chown=nestjs:nodejs packages/ ./packages/
 COPY --chown=nestjs:nodejs apps/api/package.json apps/api/tsconfig.json ./apps/api/
 COPY --chown=nestjs:nodejs apps/api/prisma ./apps/api/prisma
 
-RUN pnpm install --prod --frozen-lockfile || pnpm install --prod
+COPY --chown=nestjs:nodejs --from=builder /app/node_modules ./node_modules
+COPY --chown=nestjs:nodejs --from=builder /app/apps/api/node_modules ./apps/api/node_modules
 COPY --chown=nestjs:nodejs --from=builder /app/packages/shared/dist ./packages/shared/dist
 COPY --chown=nestjs:nodejs --from=builder /app/apps/api/dist ./apps/api/dist
-RUN pnpm --filter @logix/api prisma:generate
 
 USER nestjs
 EXPOSE 3001
