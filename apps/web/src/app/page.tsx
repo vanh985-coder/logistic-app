@@ -26,6 +26,9 @@ export default function WalkingSkeletonPage() {
     queryKey: ['system-health'],
     queryFn: () => fetchApi<HealthData>('/health/ready'),
     refetchInterval: 5000,
+    staleTime: 0,
+    retry: 2,
+    retryDelay: 1000,
   });
 
   return (
@@ -59,9 +62,25 @@ export default function WalkingSkeletonPage() {
               Làm mới trạng thái
             </button>
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-card border border-border text-xs font-mono">
-              <span className={`w-2 h-2 rounded-full ${data?.status === 'ok' ? 'bg-status-completed animate-pulse' : data?.status === 'degraded' ? 'bg-status-pending' : 'bg-status-failed'}`} />
+              <span className={`w-2 h-2 rounded-full ${
+                data?.status === 'ok'
+                  ? 'bg-status-completed animate-pulse'
+                  : data?.status === 'degraded'
+                  ? 'bg-status-pending'
+                  : isLoading
+                  ? 'bg-amber-400 animate-pulse'
+                  : 'bg-status-failed'
+              }`} />
               <span className="text-muted-foreground">Hệ thống:</span>
-              <span className="font-semibold uppercase">{data?.status || (isLoading ? 'Đang kết nối...' : 'Lỗi')}</span>
+              <span className="font-semibold uppercase">
+                {data?.status === 'ok'
+                  ? 'HOẠT ĐỘNG (UP)'
+                  : data?.status === 'degraded'
+                  ? 'SUY GIẢM (DEGRADED)'
+                  : isLoading
+                  ? 'ĐANG KẾT NỐI...'
+                  : 'LỖI (DOWN)'}
+              </span>
             </div>
           </div>
         </header>
@@ -74,8 +93,14 @@ export default function WalkingSkeletonPage() {
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">REST API Gateway</span>
                 <div className="flex items-center gap-2">
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold ${data ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
-                    {data ? '● UP' : '● DOWN'}
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold ${
+                    data
+                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                      : isLoading
+                      ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                      : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                  }`}>
+                    {data ? '● UP' : isLoading ? '● CONNECTING' : '● DOWN'}
                   </span>
                   <Server className="w-4 h-4 text-blue-400" />
                 </div>
@@ -97,8 +122,14 @@ export default function WalkingSkeletonPage() {
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Cơ sở dữ liệu</span>
                 <div className="flex items-center gap-2">
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold ${data?.services?.database?.status === 'up' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
-                    {data?.services?.database?.status === 'up' ? '● UP' : '● DOWN'}
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold ${
+                    data?.services?.database?.status === 'up'
+                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                      : isLoading
+                      ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                      : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                  }`}>
+                    {data?.services?.database?.status === 'up' ? '● UP' : isLoading ? '● CONNECTING' : '● DOWN'}
                   </span>
                   <Database className="w-4 h-4 text-emerald-400" />
                 </div>
@@ -120,8 +151,14 @@ export default function WalkingSkeletonPage() {
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Bộ nhớ đệm & Hàng đợi</span>
                 <div className="flex items-center gap-2">
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold ${data?.services?.redis?.status === 'up' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
-                    {data?.services?.redis?.status === 'up' ? '● UP' : '● DOWN'}
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold ${
+                    data?.services?.redis?.status === 'up'
+                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                      : isLoading
+                      ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                      : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                  }`}>
+                    {data?.services?.redis?.status === 'up' ? '● UP' : isLoading ? '● CONNECTING' : '● DOWN'}
                   </span>
                   <Activity className="w-4 h-4 text-amber-400" />
                 </div>

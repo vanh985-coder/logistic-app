@@ -26,12 +26,16 @@ async function bootstrap() {
   const allowedOrigins = [
     process.env.WEB_URL || 'http://localhost:3000',
     'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://[::1]:3000',
+    /^http:\/\/localhost:\d+$/,
+    /^http:\/\/127\.0\.0\.1:\d+$/,
   ];
   app.enableCors({
     origin: allowedOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id', 'Accept'],
   });
 
   // Enable graceful shutdown hooks
