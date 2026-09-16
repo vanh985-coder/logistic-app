@@ -14,6 +14,11 @@ export async function fetchApi<T>(
     ...options,
   });
 
+  if (endpoint.startsWith('/health')) {
+    const json = await res.json();
+    return json as T;
+  }
+
   if (!res.ok) {
     let errorDetail: string;
     try {

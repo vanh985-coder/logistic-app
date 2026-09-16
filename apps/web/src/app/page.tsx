@@ -73,7 +73,12 @@ export default function WalkingSkeletonPage() {
             <div>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">REST API Gateway</span>
-                <Server className="w-4 h-4 text-blue-400" />
+                <div className="flex items-center gap-2">
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold ${data ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                    {data ? '● UP' : '● DOWN'}
+                  </span>
+                  <Server className="w-4 h-4 text-blue-400" />
+                </div>
               </div>
               <h2 className="text-xl font-bold mt-2 font-mono">NestJS 11</h2>
               <p className="text-xs text-muted-foreground mt-1">Cổng dịch vụ backend và định tuyến dữ liệu</p>
@@ -91,7 +96,12 @@ export default function WalkingSkeletonPage() {
             <div>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Cơ sở dữ liệu</span>
-                <Database className="w-4 h-4 text-emerald-400" />
+                <div className="flex items-center gap-2">
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold ${data?.services?.database?.status === 'up' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                    {data?.services?.database?.status === 'up' ? '● UP' : '● DOWN'}
+                  </span>
+                  <Database className="w-4 h-4 text-emerald-400" />
+                </div>
               </div>
               <h2 className="text-xl font-bold mt-2 font-mono">PostgreSQL 16</h2>
               <p className="text-xs text-muted-foreground mt-1">Prisma ORM + Migration 0_init (Company, User)</p>
@@ -109,7 +119,12 @@ export default function WalkingSkeletonPage() {
             <div>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Bộ nhớ đệm & Hàng đợi</span>
-                <Activity className="w-4 h-4 text-amber-400" />
+                <div className="flex items-center gap-2">
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold ${data?.services?.redis?.status === 'up' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                    {data?.services?.redis?.status === 'up' ? '● UP' : '● DOWN'}
+                  </span>
+                  <Activity className="w-4 h-4 text-amber-400" />
+                </div>
               </div>
               <h2 className="text-xl font-bold mt-2 font-mono">Redis 7 + BullMQ</h2>
               <p className="text-xs text-muted-foreground mt-1">Quản lý phiên, cache và hàng đợi job tính toán 3D</p>
