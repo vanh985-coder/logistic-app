@@ -51,19 +51,22 @@ services:
       timeout: 5s
       retries: 5
 
-  minio-init:
-    image: quay.io/minio/mc:latest
-    container_name: logix3d-minio-init
+  worker:
+    build:
+      context: ..
+      dockerfile: apps/worker/Dockerfile
+    container_name: logix3d-worker
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DATABASE_URL: postgresql://${POSTGRES_USER:-logix}:${POSTGRES_PASSWORD:-logix_secret_dev}@postgres:5432/${POSTGRES_DB:-logix3d_db}?schema=public
     depends_on:
-      minio:
+      redis:
         condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-logix_minio_admin} ${MINIO_ROOT_PASSWORD:-logix_minio_secret_key};
-      mc mb --ignore-existing local/${MINIO_BUCKET_PROOFS:-loading-proofs};
-      mc mb --ignore-existing local/${MINIO_BUCKET_DOCS:-business-documents};
-      exit 0;
-      "
+      postgres:
+        condition: service_healthy
 
 volumes:
   postgres_data:

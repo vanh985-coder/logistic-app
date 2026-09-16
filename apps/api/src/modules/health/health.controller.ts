@@ -17,6 +17,7 @@ export class HealthController {
    */
   @Get('live')
   live(@Res() res: Response) {
+    this.logger.log('Liveness check executed successfully');
     return res.status(HttpStatus.OK).json({
       status: 'ok',
       uptime: Math.floor(process.uptime()),
