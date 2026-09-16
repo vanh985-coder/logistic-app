@@ -1,0 +1,28 @@
+export enum CompanyType {
+  SHIPPER = 'SHIPPER',
+  FWD = 'FWD',
+  CFS = 'CFS',
+}
+
+export enum CompanyStatus {
+  PENDING = 'PENDING',
+  VERIFIED = 'VERIFIED',
+  REJECTED = 'REJECTED',
+  SUSPENDED = 'SUSPENDED',
+}
+
+export enum UserRole {
+  ADMIN = 'ADMIN',
+  SHIPPER_ADMIN = 'SHIPPER_ADMIN',
+  SHIPPER_MEMBER = 'SHIPPER_MEMBER',
+  FWD_ADMIN = 'FWD_ADMIN',
+  FWD_OPERATOR = 'FWD_OPERATOR',
+  CFS_ADMIN = 'CFS_ADMIN',
+  CFS_OPERATOR = 'CFS_OPERATOR',
+}
+
+export enum UserStatus {
+  ACTIVE = 'ACTIVE',
+  INACTIVE = 'INACTIVE',
+  BLOCKED = 'BLOCKED',
+}

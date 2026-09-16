@@ -1,0 +1,28 @@
+{
+  "name": "@logix/worker",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsup src/main.ts --format cjs --out-dir dist",
+    "dev": "tsup src/main.ts --format cjs --out-dir dist --watch --onSuccess \"node dist/main.js\"",
+    "start": "node dist/main.js",
+    "start:prod": "node dist/main.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "test": "echo \"No tests for worker skeleton\""
+  },
+  "dependencies": {
+    "@logix/packing": "workspace:*",
+    "@logix/shared": "workspace:*",
+    "bullmq": "^5.41.6",
+    "ioredis": "^5.6.0",
+    "pino": "^9.6.0",
+    "pino-pretty": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.2"
+  }
+}

@@ -1,0 +1,80 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum CompanyType {
+  SHIPPER
+  FWD
+  CFS
+}
+
+enum CompanyStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+  SUSPENDED
+}
+
+enum UserRole {
+  ADMIN
+  SHIPPER_ADMIN
+  SHIPPER_MEMBER
+  FWD_ADMIN
+  FWD_OPERATOR
+  CFS_ADMIN
+  CFS_OPERATOR
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  BLOCKED
+}
+
+model Company {
+  id                 String        @id @default(uuid())
+  taxCode            String        @unique
+  name               String
+  type               CompanyType
+  status             CompanyStatus @default(PENDING)
+  address            String?
+  phone              String?
+  email              String?
+  website            String?
+  representativeName String?
+  metadata           Json?
+  verifiedAt         DateTime?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  deletedAt          DateTime?
+
+  users              User[]
+
+  @@index([status, createdAt(sort: Desc)])
+  @@map("companies")
+}
+
+model User {
+  id           String     @id @default(uuid())
+  companyId    String
+  company      Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  email        String     @unique
+  passwordHash String
+  role         UserRole
+  status       UserStatus @default(ACTIVE)
+  fullName     String?
+  phone        String?
+  avatarUrl    String?
+  lastLoginAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  deletedAt    DateTime?
+
+  @@index([companyId, status, createdAt(sort: Desc)])
+  @@map("users")
+}
