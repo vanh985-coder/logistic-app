@@ -81,6 +81,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Generate Prisma client
+        run: pnpm --filter @logix/api prisma:generate
+
       - name: Run database migration
         env:
           DATABASE_URL: "postgresql://logix:logix_secret_dev@localhost:5432/logix3d_db?schema=public"
@@ -90,7 +93,11 @@ jobs:
         env:
           DATABASE_URL: "postgresql://logix:logix_secret_dev@localhost:5432/logix3d_db?schema=public"
           REDIS_URL: "redis://localhost:6379"
-        run: pnpm run test
+          JWT_SECRET: "logix3d-super-secret-jwt-key-min-32-chars-2026"
+        run: |
+          pnpm run test
+          pnpm run test:e2e
+
 
   build-docker-images:
     needs: [lint-and-typecheck, unit-and-e2e-tests]
