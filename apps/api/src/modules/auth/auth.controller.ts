@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
-import { RegisterDto, LoginDto } from './dto/auth.dto';
+import { RegisterDto, LoginDto, LoginResponseDto } from './dto/auth.dto';
 import { Public } from './decorators/public.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
 
@@ -53,11 +53,11 @@ export class AuthController {
   async login(
     @Body() dto: LoginDto,
     @Res({ passthrough: true }) res: Response,
-  ) {
-    const { tokens, user } = await this.authService.login(dto);
-    this.setRefreshTokenCookie(res, tokens.refreshToken);
+  ): Promise<LoginResponseDto> {
+    const { accessToken, refreshToken, user } = await this.authService.login(dto);
+    this.setRefreshTokenCookie(res, refreshToken);
     return {
-      accessToken: tokens.accessToken,
+      accessToken,
       user,
     };
   }

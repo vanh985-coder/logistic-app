@@ -123,7 +123,11 @@ export class AuthService {
    * Authenticates user, verifies password, and issues JWT access token + refresh token.
    * Employs constant-time dummy Argon2id verification when email is not found to prevent timing attacks.
    */
-  async login(dto: LoginDto): Promise<LoginResponseDto & { tokens: TokenPair }> {
+  async login(dto: LoginDto): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    user: LoginResponseDto['user'];
+  }> {
     const user = await this.prisma.unsafeGlobal.user.findUnique({
       where: { email: dto.email.toLowerCase() },
       include: { company: true },
@@ -170,10 +174,10 @@ export class AuthService {
       email: user.email,
     });
 
-    // Return explicit response DTO (omits companyStatus and administrative internals)
+    // Return flat structure (omits tokens object, companyStatus, and administrative internals)
     return {
-      tokens,
       accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
       user: {
         id: user.id,
         email: user.email,

@@ -126,6 +126,15 @@ describe('Authentication & Token Lifecycle (e2e)', () => {
     expect(res.body.user.email).toBe(registrationPayload.email.toLowerCase());
     expect(res.body.user.companyName).toBe(registrationPayload.companyName);
 
+    // Security & DTO check: tokens wrapper must NOT exist, response must be strictly flat
+    expect(res.body).not.toHaveProperty('tokens');
+    expect(res.body.tokens).toBeUndefined();
+    expect(Object.keys(res.body).sort()).toEqual(['accessToken', 'user'].sort());
+
+    // Verify accessToken key appears exactly once in the entire JSON string
+    const accessTokenOccurrences = (JSON.stringify(res.body).match(/"accessToken"/g) || []).length;
+    expect(accessTokenOccurrences).toBe(1);
+
     // Security check: companyStatus is not exposed
     expect(res.body.user.companyStatus).toBeUndefined();
 
