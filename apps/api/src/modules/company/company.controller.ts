@@ -13,6 +13,7 @@ import { UserRole, CompanyStatus } from '@logix/shared';
 export class CompanyController {
   constructor(private readonly companyService: CompanyService) {}
 
+  @Roles(UserRole.PLATFORM_ADMIN)
   @Get()
   async findAll() {
     return this.companyService.findAll();

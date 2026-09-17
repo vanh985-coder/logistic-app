@@ -5,7 +5,7 @@ const DEFAULT_TIMEOUT_MS = 8000;
 
 export async function fetchApi<T>(
   endpoint: string,
-  options?: RequestInit,
+  options?: RequestInit & { _isRetry?: boolean },
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
   
@@ -19,9 +19,9 @@ export async function fetchApi<T>(
     ...((options?.headers as Record<string, string>) || {}),
   };
 
-  // Attach auth token from sessionStorage if present
+  // Attach auth token from localStorage (fallback to sessionStorage) if present
   if (typeof window !== 'undefined') {
-    const token = sessionStorage.getItem('accessToken');
+    const token = localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken');
     if (token && !headers['Authorization'] && !headers['authorization']) {
       headers['Authorization'] = `Bearer ${token}`;
     }
@@ -43,6 +43,45 @@ export async function fetchApi<T>(
   if (endpoint.startsWith('/health')) {
     const json = await res.json();
     return json as T;
+  }
+
+  // Handle 401 Unauthorized with token refresh retry
+  if (res.status === 401 && !options?._isRetry && !endpoint.startsWith('/auth/')) {
+    try {
+      const refreshRes = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (refreshRes.ok) {
+        const refreshData = await refreshRes.json();
+        const newToken = refreshData.accessToken;
+        if (newToken && typeof window !== 'undefined') {
+          localStorage.setItem('accessToken', newToken);
+          sessionStorage.setItem('accessToken', newToken);
+
+          // Retry original request with new token
+          return fetchApi<T>(endpoint, {
+            ...options,
+            _isRetry: true,
+            headers: {
+              ...headers,
+              Authorization: `Bearer ${newToken}`,
+            },
+          });
+        }
+      } else {
+        // Refresh failed, clear session
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('accessToken');
+          localStorage.removeItem('user');
+          sessionStorage.clear();
+        }
+      }
+    } catch {
+      // ignore refresh error and let original 401 throw
+    }
   }
 
   if (!res.ok) {

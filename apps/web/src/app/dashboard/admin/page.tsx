@@ -2,6 +2,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '@/lib/api-client';
+import { useAuth } from '@/contexts/auth-context';
+import { UserRole } from '@logix/shared';
 
 interface Company {
   id: string;
@@ -16,37 +18,42 @@ interface Company {
 }
 
 export default function AdminDashboardPage() {
+  const { user } = useAuth();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const loadCompanies = async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const token = typeof window !== 'undefined' ? sessionStorage.getItem('accessToken') : null;
-      const data = await fetchApi<Company[]>('/companies', {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const data = await fetchApi<Company[]>('/companies');
       setCompanies(data);
-    } catch {
-      // ignore
+    } catch (err: any) {
+      setError(err.message || 'Không có quyền truy cập danh sách doanh nghiệp.');
+      setCompanies([]);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadCompanies();
-  }, []);
+    if (user?.role === UserRole.PLATFORM_ADMIN) {
+      loadCompanies();
+    } else {
+      setLoading(false);
+      setError('Tài khoản không có quyền PLATFORM_ADMIN.');
+    }
+  }, [user]);
 
   const handleUpdateStatus = async (id: string, newStatus: string) => {
     setActionLoading(id);
     setMessage(null);
     try {
-      const token = typeof window !== 'undefined' ? sessionStorage.getItem('accessToken') : null;
       await fetchApi(`/companies/${id}/status`, {
         method: 'PATCH',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: JSON.stringify({ status: newStatus }),
       });
       setMessage(`Cập nhật trạng thái công ty thành công sang ${newStatus}!`);
@@ -72,6 +79,12 @@ export default function AdminDashboardPage() {
       {message && (
         <div className="rounded-lg bg-blue-950/60 border border-blue-800/80 p-4 text-xs text-blue-200">
           {message}
+        </div>
+      )}
+
+      {error && (
+        <div className="rounded-lg bg-red-950/60 border border-red-800/80 p-4 text-xs text-red-200">
+          <span className="font-semibold">Lỗi: </span>{error}
         </div>
       )}
 
@@ -130,7 +143,11 @@ export default function AdminDashboardPage() {
           </button>
         </div>
 
-        {loading ? (
+        {error ? (
+          <div className="py-8 text-center text-xs text-red-400">
+            Không thể tải danh sách do không có quyền hoặc có lỗi xảy ra.
+          </div>
+        ) : loading ? (
           <div className="py-8 text-center text-xs text-slate-500">Đang tải dữ liệu...</div>
         ) : companies.length === 0 ? (
           <div className="py-8 text-center text-xs text-slate-500">Chưa có doanh nghiệp nào.</div>

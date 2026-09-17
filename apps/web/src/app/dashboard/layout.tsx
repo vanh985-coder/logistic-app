@@ -1,18 +1,11 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { fetchApi } from '@/lib/api-client';
-
-interface UserInfo {
-  id: string;
-  email: string;
-  fullName: string;
-  role: string;
-  companyId: string;
-  companyName: string;
-}
+import { useAuth } from '@/contexts/auth-context';
+import { getNavItemsForRole, isRouteAllowedForRole, getDefaultDashboardForRole } from '@/lib/auth-utils';
+import { RefreshCw } from 'lucide-react';
 
 export default function DashboardLayout({
   children,
@@ -21,40 +14,34 @@ export default function DashboardLayout({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [user, setUser] = useState<UserInfo | null>(null);
+  const { user, isLoading, isAuthenticated, logout } = useAuth();
 
+  // Route Guard: enforce strict RBAC redirection
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const stored = sessionStorage.getItem('user');
-      if (stored) {
-        try {
-          setUser(JSON.parse(stored));
-        } catch {
-          // ignore
-        }
-      }
-    }
-  }, []);
+    if (isLoading) return;
 
-  const handleLogout = async () => {
-    try {
-      await fetchApi('/auth/logout', { method: 'POST' });
-    } catch {
-      // ignore
+    if (!isAuthenticated || !user) {
+      router.replace('/login');
+      return;
     }
-    if (typeof window !== 'undefined') {
-      sessionStorage.clear();
-    }
-    router.push('/login');
-  };
 
-  const navItems = [
-    { label: '📦 Quản lý Lô hàng', href: '/shipments', rolePrefix: '' },
-    { label: 'Chủ hàng (Shipper)', href: '/dashboard/shipper', rolePrefix: 'SHIPPER' },
-    { label: 'Giao nhận (Forwarder)', href: '/dashboard/fwd', rolePrefix: 'FWD' },
-    { label: 'Kho gom hàng (CFS)', href: '/dashboard/cfs', rolePrefix: 'CFS' },
-    { label: 'Quản trị sàn (Admin)', href: '/dashboard/admin', rolePrefix: 'ADMIN' },
-  ];
+    if (!isRouteAllowedForRole(pathname, user.role)) {
+      const fallbackUrl = getDefaultDashboardForRole(user.role);
+      router.replace(fallbackUrl);
+    }
+  }, [isLoading, isAuthenticated, user, pathname, router]);
+
+  // If loading or unauthorized route, do not render children
+  if (isLoading || !user || !isRouteAllowedForRole(pathname, user.role)) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-400">
+        <RefreshCw className="h-7 w-7 animate-spin text-blue-500 mb-3" />
+        <div className="text-xs">Đang kiểm tra quyền truy cập...</div>
+      </div>
+    );
+  }
+
+  const navItems = getNavItemsForRole(user.role);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col md:flex-row">
@@ -78,7 +65,7 @@ export default function DashboardLayout({
               Không gian làm việc
             </div>
             {navItems.map((item) => {
-              const isActive = pathname.startsWith(item.href);
+              const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
               return (
                 <Link
                   key={item.href}
@@ -100,17 +87,17 @@ export default function DashboardLayout({
         <div className="border-t border-slate-800 pt-4 mt-6">
           <div className="px-3 py-2 rounded-lg bg-slate-800/60 mb-3">
             <div className="text-xs font-semibold text-white truncate">
-              {user?.fullName || user?.email || 'Người dùng'}
+              {user.fullName || user.email}
             </div>
             <div className="text-[11px] text-slate-400 truncate">
-              {user?.companyName || 'Công ty'}
+              {user.companyName || 'Doanh nghiệp'}
             </div>
-            <div className="mt-1.5 inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-900/60 text-blue-300 border border-blue-700/50">
-              {user?.role || 'MEMBER'}
+            <div className="mt-1.5 inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-900/60 text-blue-300 border border-blue-700/50 font-mono">
+              {user.role}
             </div>
           </div>
           <button
-            onClick={handleLogout}
+            onClick={logout}
             className="w-full flex items-center justify-center py-2 px-3 text-xs font-medium text-red-400 hover:bg-red-950/40 hover:text-red-300 rounded-lg transition border border-red-900/40 cursor-pointer"
           >
             Đăng xuất

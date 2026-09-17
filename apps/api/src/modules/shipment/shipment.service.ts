@@ -10,6 +10,8 @@ import {
   PackageType,
   calculateShipmentPricing,
   calcVolumeMm3,
+  cbmFromVolumeMm3,
+  kgFromWeightGrams,
 } from '@logix/shared';
 import { CreateShipmentDto, AddPackageDto, ShipmentQueryDto } from './dto/shipment.dto';
 import { PackageExcelParserService } from './excel/package-excel-parser.service';
@@ -103,6 +105,39 @@ export class ShipmentService {
       items,
       nextCursor,
       hasMore,
+    };
+  }
+
+  async getStats() {
+    const shipments = await (this.prisma as any).shipment.findMany({
+      select: {
+        status: true,
+        volumeMm3: true,
+        weightGrams: true,
+        totalAmount: true,
+      },
+    });
+
+    let totalVolumeMm3 = 0n;
+    let totalWeightGrams = 0n;
+    let totalAmount = 0n;
+    const byStatus: Record<string, number> = {};
+
+    for (const s of shipments) {
+      totalVolumeMm3 += BigInt(s.volumeMm3);
+      totalWeightGrams += BigInt(s.weightGrams);
+      totalAmount += BigInt(s.totalAmount);
+      byStatus[s.status] = (byStatus[s.status] || 0) + 1;
+    }
+
+    return {
+      totalShipments: shipments.length,
+      totalVolumeMm3: totalVolumeMm3.toString(),
+      totalCbm: cbmFromVolumeMm3(totalVolumeMm3),
+      totalWeightGrams: totalWeightGrams.toString(),
+      totalWeightKg: kgFromWeightGrams(totalWeightGrams),
+      totalAmount: totalAmount.toString(),
+      byStatus,
     };
   }
 

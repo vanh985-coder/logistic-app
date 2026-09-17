@@ -71,10 +71,10 @@ export default function NewShipmentPage() {
     {
       id: '1',
       packageCode: 'PKG-001',
-      lengthMm: 600,
-      widthMm: 400,
-      heightMm: 300,
-      weightGrams: 10000,
+      lengthMm: 0,
+      widthMm: 0,
+      heightMm: 0,
+      weightGrams: 0,
       isFragile: false,
       noStack: false,
       packageType: PackageType.BOX,
@@ -133,15 +133,26 @@ export default function NewShipmentPage() {
       {
         id: String(Date.now()),
         packageCode: `PKG-${String(nextNum).padStart(3, '0')}`,
-        lengthMm: 500,
-        widthMm: 400,
-        heightMm: 300,
-        weightGrams: 8000,
+        lengthMm: 0,
+        widthMm: 0,
+        heightMm: 0,
+        weightGrams: 0,
         isFragile: false,
         noStack: false,
         packageType: PackageType.BOX,
       },
     ]);
+  };
+
+  const handleProceedToStep3 = () => {
+    setSubmitError(null);
+    for (const p of packages) {
+      if (p.lengthMm <= 0 || p.widthMm <= 0 || p.heightMm <= 0 || p.weightGrams <= 0) {
+        setSubmitError(`Kiện "${p.packageCode}" chưa nhập đầy đủ kích thước hoặc khối lượng (phải lớn hơn 0).`);
+        return;
+      }
+    }
+    setCurrentStep(3);
   };
 
   const handleRemovePackageRow = (id: string) => {
@@ -476,32 +487,36 @@ export default function NewShipmentPage() {
                       <td className="px-3 py-2">
                         <input
                           type="number"
-                          value={pkg.lengthMm}
-                          onChange={(e) => handleUpdatePackage(pkg.id, 'lengthMm', Number(e.target.value))}
+                          value={pkg.lengthMm === 0 ? '' : pkg.lengthMm}
+                          placeholder="0"
+                          onChange={(e) => handleUpdatePackage(pkg.id, 'lengthMm', e.target.value === '' ? 0 : Number(e.target.value))}
                           className="w-20 px-2 py-1 rounded bg-slate-800 border border-slate-700 text-white font-mono text-xs text-right focus:outline-none focus:ring-1 focus:ring-blue-500"
                         />
                       </td>
                       <td className="px-3 py-2">
                         <input
                           type="number"
-                          value={pkg.widthMm}
-                          onChange={(e) => handleUpdatePackage(pkg.id, 'widthMm', Number(e.target.value))}
+                          value={pkg.widthMm === 0 ? '' : pkg.widthMm}
+                          placeholder="0"
+                          onChange={(e) => handleUpdatePackage(pkg.id, 'widthMm', e.target.value === '' ? 0 : Number(e.target.value))}
                           className="w-20 px-2 py-1 rounded bg-slate-800 border border-slate-700 text-white font-mono text-xs text-right focus:outline-none focus:ring-1 focus:ring-blue-500"
                         />
                       </td>
                       <td className="px-3 py-2">
                         <input
                           type="number"
-                          value={pkg.heightMm}
-                          onChange={(e) => handleUpdatePackage(pkg.id, 'heightMm', Number(e.target.value))}
+                          value={pkg.heightMm === 0 ? '' : pkg.heightMm}
+                          placeholder="0"
+                          onChange={(e) => handleUpdatePackage(pkg.id, 'heightMm', e.target.value === '' ? 0 : Number(e.target.value))}
                           className="w-20 px-2 py-1 rounded bg-slate-800 border border-slate-700 text-white font-mono text-xs text-right focus:outline-none focus:ring-1 focus:ring-blue-500"
                         />
                       </td>
                       <td className="px-3 py-2">
                         <input
                           type="number"
-                          value={pkg.weightGrams}
-                          onChange={(e) => handleUpdatePackage(pkg.id, 'weightGrams', Number(e.target.value))}
+                          value={pkg.weightGrams === 0 ? '' : pkg.weightGrams}
+                          placeholder="0"
+                          onChange={(e) => handleUpdatePackage(pkg.id, 'weightGrams', e.target.value === '' ? 0 : Number(e.target.value))}
                           className="w-24 px-2 py-1 rounded bg-slate-800 border border-slate-700 text-white font-mono text-xs text-right focus:outline-none focus:ring-1 focus:ring-blue-500"
                         />
                       </td>
@@ -561,6 +576,12 @@ export default function NewShipmentPage() {
             </div>
           </div>
 
+          {submitError && (
+            <div className="p-3 rounded-lg bg-red-950/60 border border-red-800 text-xs text-red-200">
+              {submitError}
+            </div>
+          )}
+
           <div className="flex justify-between pt-4">
             <button
               onClick={() => setCurrentStep(1)}
@@ -569,7 +590,7 @@ export default function NewShipmentPage() {
               <ArrowLeft className="h-4 w-4" /> Quay lại Bước 1
             </button>
             <button
-              onClick={() => setCurrentStep(3)}
+              onClick={handleProceedToStep3}
               disabled={packages.length === 0}
               className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-semibold text-sm transition"
             >

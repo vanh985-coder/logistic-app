@@ -441,4 +441,32 @@ describe('Shipment & Pricing Engine (e2e)', () => {
         .expect(400);
     });
   });
+
+  describe('6. Shipment Statistics (Multi-tenant isolated)', () => {
+    it('should return real stats for Company A', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/shipments/stats')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .expect(200);
+
+      expect(res.body.totalShipments).toBe(1);
+      expect(res.body.byStatus.SUBMITTED).toBe(1);
+      expect(Number(res.body.totalCbm)).toBeGreaterThan(0);
+      expect(Number(res.body.totalWeightKg)).toBeGreaterThan(0);
+      expect(BigInt(res.body.totalAmount)).toBeGreaterThan(0n);
+    });
+
+    it('should return empty stats (0 shipments) for Company B', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/shipments/stats')
+        .set('Authorization', `Bearer ${tokenB}`)
+        .expect(200);
+
+      expect(res.body.totalShipments).toBe(0);
+      expect(Number(res.body.totalCbm)).toBe(0);
+      expect(Number(res.body.totalWeightKg)).toBe(0);
+      expect(res.body.totalAmount).toBe('0');
+      expect(res.body.byStatus).toEqual({});
+    });
+  });
 });

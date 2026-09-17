@@ -4,9 +4,12 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { fetchApi } from '@/lib/api-client';
+import { useAuth } from '@/contexts/auth-context';
+import { getDefaultDashboardForRole } from '@/lib/auth-utils';
 
 export default function LoginPage() {
   const router = useRouter();
+  const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -23,6 +26,7 @@ export default function LoginPage() {
         user: {
           id: string;
           email: string;
+          fullName: string;
           role: string;
           companyId: string;
           companyName: string;
@@ -32,25 +36,12 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       });
 
-      // Store accessToken in sessionStorage
-      if (typeof window !== 'undefined') {
-        sessionStorage.setItem('accessToken', data.accessToken);
-        sessionStorage.setItem('user', JSON.stringify(data.user));
-      }
+      // Save credentials into unified AuthContext and storage
+      login(data.accessToken, data.user);
 
       // Route based on role
-      const role = data.user.role;
-      if (role.startsWith('SHIPPER')) {
-        router.push('/dashboard/shipper');
-      } else if (role.startsWith('FWD')) {
-        router.push('/dashboard/fwd');
-      } else if (role.startsWith('CFS')) {
-        router.push('/dashboard/cfs');
-      } else if (role.includes('ADMIN')) {
-        router.push('/dashboard/admin');
-      } else {
-        router.push('/dashboard/shipper');
-      }
+      const targetDashboard = getDefaultDashboardForRole(data.user.role);
+      router.push(targetDashboard);
     } catch (err: any) {
       setError(err.message || 'Đăng nhập không thành công. Vui lòng kiểm tra lại.');
     } finally {

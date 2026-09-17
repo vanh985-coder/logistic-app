@@ -32,6 +32,11 @@ export class ShipmentController {
     return this.shipmentService.findAll(query);
   }
 
+  @Get('stats')
+  async getStats() {
+    return this.shipmentService.getStats();
+  }
+
   @Get(':id')
   async findById(@Param('id') id: string) {
     return this.shipmentService.findById(id);
