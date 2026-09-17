@@ -8,6 +8,12 @@ import { Logger } from 'nestjs-pino';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 
+// Support BigInt JSON serialization globally
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
+
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
@@ -22,15 +28,19 @@ async function bootstrap() {
   // Parse cookies (for HttpOnly refresh tokens)
   app.use(cookieParser());
 
-  // CORS whitelist
-  const allowedOrigins = [
-    process.env.WEB_URL || 'http://localhost:3000',
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
-    'http://[::1]:3000',
-    /^http:\/\/localhost:\d+$/,
-    /^http:\/\/127\.0\.0\.1:\d+$/,
-  ];
+  // CORS whitelist with strict environment guard
+  const isProduction = process.env.NODE_ENV === 'production';
+  const allowedOrigins: (string | RegExp)[] = isProduction
+    ? (process.env.WEB_URL ? process.env.WEB_URL.split(',').map((u) => u.trim()) : ['http://localhost:3000'])
+    : [
+        process.env.WEB_URL || 'http://localhost:3000',
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'http://[::1]:3000',
+        /^http:\/\/localhost:\d+$/,
+        /^http:\/\/127\.0\.0\.1:\d+$/,
+      ];
+
   app.enableCors({
     origin: allowedOrigins,
     credentials: true,

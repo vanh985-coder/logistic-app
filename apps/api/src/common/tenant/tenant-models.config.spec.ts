@@ -7,7 +7,15 @@ import {
 
 describe('TenantModelsConfig - Fail Fast Bootstrap Validation', () => {
   it('should pass when all models are classified', () => {
-    const knownModels = ['User', 'RefreshToken', 'Company'];
+    const knownModels = [
+      'Company',
+      'User',
+      'RefreshToken',
+      'Lane',
+      'PricingConfig',
+      'Shipment',
+      'Package',
+    ];
     expect(() =>
       validateAllModelsClassified(
         knownModels,

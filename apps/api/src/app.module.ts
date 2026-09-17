@@ -8,6 +8,8 @@ import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CompanyModule } from './modules/company/company.module';
 import { UserModule } from './modules/user/user.module';
+import { LaneModule } from './modules/lane/lane.module';
+import { ShipmentModule } from './modules/shipment/shipment.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from './modules/auth/guards/roles.guard';
 import { TenantInterceptor } from './common/tenant/tenant.interceptor';
@@ -21,6 +23,8 @@ import { TenantInterceptor } from './common/tenant/tenant.interceptor';
     AuthModule,
     CompanyModule,
     UserModule,
+    LaneModule,
+    ShipmentModule,
   ],
   providers: [
     {

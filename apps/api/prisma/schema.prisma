@@ -56,6 +56,8 @@ model Company {
   deletedAt          DateTime?
 
   users              User[]
+  shipments          Shipment[]
+  packages           Package[]
 
   @@index([status, createdAt(sort: Desc)])
   @@map("companies")
@@ -98,3 +100,118 @@ model RefreshToken {
   @@index([tokenHash])
   @@map("refresh_tokens")
 }
+
+enum ShipmentStatus {
+  DRAFT
+  PRICED
+  SUBMITTED
+  CONFIRMED
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+}
+
+enum PackageType {
+  BOX
+  PALLET
+  CRATE
+  OTHER
+}
+
+enum ChargeableBasis {
+  VOLUME
+  WEIGHT
+}
+
+model Lane {
+  id             String          @id @default(uuid())
+  code           String          @unique
+  name           String
+  origin         String
+  destination    String
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  pricingConfigs PricingConfig[]
+  shipments      Shipment[]
+
+  @@map("lanes")
+}
+
+model PricingConfig {
+  id                    String    @id @default(uuid())
+  laneId                String
+  lane                  Lane      @relation(fields: [laneId], references: [id], onDelete: Cascade)
+  version               Int       @default(1)
+  cbmRate               BigInt
+  weightRateKg          BigInt
+  fixedFee              BigInt    @default(0)
+  standardSurchargeBps  Int       @default(10000)
+  irregularSurchargeBps Int       @default(11500)
+  noStackSurchargeBps   Int       @default(13000)
+  maxEdgeRatioThreshold Int       @default(5)
+  effectiveFrom         DateTime  @default(now())
+  effectiveTo           DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  shipments             Shipment[]
+
+  @@index([laneId])
+  @@index([laneId, effectiveTo])
+  @@map("pricing_configs")
+}
+
+model Shipment {
+  id               String          @id @default(uuid())
+  companyId        String
+  company          Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  laneId           String
+  lane             Lane            @relation(fields: [laneId], references: [id])
+  pricingConfigId  String
+  pricingConfig    PricingConfig   @relation(fields: [pricingConfigId], references: [id])
+  trackingCode     String          @unique
+  status           ShipmentStatus  @default(DRAFT)
+  totalPackages    Int             @default(0)
+  volumeMm3        BigInt          @default(0)
+  weightGrams      BigInt          @default(0)
+  chargeableBasis  ChargeableBasis @default(VOLUME)
+  baseAmount       BigInt          @default(0)
+  surchargedAmount BigInt          @default(0)
+  totalAmount      BigInt          @default(0)
+  pricingSnapshot  Json?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  deletedAt        DateTime?
+
+  packages         Package[]
+
+  @@index([companyId, status, createdAt(sort: Desc)])
+  @@index([laneId])
+  @@map("shipments")
+}
+
+model Package {
+  id          String      @id @default(uuid())
+  companyId   String
+  company     Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  shipmentId  String
+  shipment    Shipment    @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  packageCode String
+  lengthMm    Int
+  widthMm     Int
+  heightMm    Int
+  volumeMm3   BigInt
+  weightGrams Int
+  isFragile   Boolean     @default(false)
+  noStack     Boolean     @default(false)
+  packageType PackageType @default(BOX)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([companyId, shipmentId])
+  @@index([shipmentId])
+  @@map("packages")
+}
+

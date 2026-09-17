@@ -28,3 +28,26 @@ export enum UserStatus {
   INACTIVE = 'INACTIVE',
   BLOCKED = 'BLOCKED',
 }
+
+export enum ShipmentStatus {
+  DRAFT = 'DRAFT',
+  PRICED = 'PRICED',
+  SUBMITTED = 'SUBMITTED',
+  CONFIRMED = 'CONFIRMED',
+  IN_TRANSIT = 'IN_TRANSIT',
+  DELIVERED = 'DELIVERED',
+  CANCELLED = 'CANCELLED',
+}
+
+export enum PackageType {
+  BOX = 'BOX',
+  PALLET = 'PALLET',
+  CRATE = 'CRATE',
+  OTHER = 'OTHER',
+}
+
+export enum ChargeableBasis {
+  VOLUME = 'VOLUME',
+  WEIGHT = 'WEIGHT',
+}
+

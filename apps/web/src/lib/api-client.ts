@@ -15,13 +15,28 @@ export async function fetchApi<T>(
       ? AbortSignal.timeout(DEFAULT_TIMEOUT_MS)
       : undefined;
 
+  const headers: Record<string, string> = {
+    ...((options?.headers as Record<string, string>) || {}),
+  };
+
+  // Attach auth token from sessionStorage if present
+  if (typeof window !== 'undefined') {
+    const token = sessionStorage.getItem('accessToken');
+    if (token && !headers['Authorization'] && !headers['authorization']) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+  }
+
+  // If body is not FormData, default to application/json
+  const isFormData = typeof FormData !== 'undefined' && options?.body instanceof FormData;
+  if (!isFormData && !headers['Content-Type'] && !headers['content-type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+
   const res = await fetch(url, {
     credentials: 'include',
     signal: options?.signal ?? timeoutSignal,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
+    headers,
     ...options,
   });
 

@@ -49,6 +49,7 @@ export default function DashboardLayout({
   };
 
   const navItems = [
+    { label: '📦 Quản lý Lô hàng', href: '/shipments', rolePrefix: '' },
     { label: 'Chủ hàng (Shipper)', href: '/dashboard/shipper', rolePrefix: 'SHIPPER' },
     { label: 'Giao nhận (Forwarder)', href: '/dashboard/fwd', rolePrefix: 'FWD' },
     { label: 'Kho gom hàng (CFS)', href: '/dashboard/cfs', rolePrefix: 'CFS' },
