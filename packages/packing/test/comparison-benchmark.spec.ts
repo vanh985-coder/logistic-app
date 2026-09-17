@@ -1,4 +1,4 @@
-import { describe, it } from 'vitest';
+import { describe, it, afterAll } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
@@ -31,6 +31,7 @@ const CONTAINER_40HC: ContainerDimension = {
 interface StrategyResult {
   strategy: 'A_MANUAL' | 'B_EXPERIENCED' | 'C_EXTREME_POINT';
   scenario: string;
+  inputVolumeM3: number;
   container1FillRatePct: number;
   container1PlacedCount: number;
   totalPackages: number;
@@ -205,19 +206,26 @@ function packStrategyB(container: ContainerDimension, packages: PackageItem[]): 
  * Multi-container simulation: Packs packages until all are placed.
  * Returns { container1Result, totalContainersNeeded, totalTimeMs }.
  */
-function evaluateStrategyMultiContainer(
+async function evaluateStrategyMultiContainer(
   strategyName: 'A_MANUAL' | 'B_EXPERIENCED' | 'C_EXTREME_POINT',
   scenarioName: string,
   packFn: (c: ContainerDimension, pkgs: PackageItem[]) => PackingResult,
   dataset: PackageItem[],
-): StrategyResult {
+): Promise<StrategyResult> {
   let remaining = [...dataset];
   let containersNeeded = 0;
   let container1Result: PackingResult | null = null;
   let totalTimeMs = 0;
 
+  const totalVolMm3 = dataset.reduce(
+    (acc, p) => acc + BigInt(p.lengthMm) * BigInt(p.widthMm) * BigInt(p.heightMm),
+    0n,
+  );
+  const inputVolumeM3 = Number((Number(totalVolMm3 / 1000000n) / 1000).toFixed(2));
+
   while (remaining.length > 0) {
     containersNeeded++;
+    await new Promise((r) => setTimeout(r, 20));
     const t0 = performance.now();
     const result = packFn(CONTAINER_40HC, remaining);
     const elapsed = performance.now() - t0;
@@ -239,12 +247,13 @@ function evaluateStrategyMultiContainer(
   return {
     strategy: strategyName,
     scenario: scenarioName,
+    inputVolumeM3,
     container1FillRatePct: Number(((container1Result?.fillRateBps ?? 0) / 100).toFixed(2)),
     container1PlacedCount: container1Result?.placedPackages.length ?? 0,
     totalPackages: dataset.length,
     containersNeeded,
     container1CogX: container1Result?.centerOfGravity.xPercentage ?? 0,
-    totalTimeMs: Number(totalTimeMs.toFixed(2)),
+    totalTimeMs: Number(totalTimeMs.toFixed(0)),
   };
 }
 
@@ -254,7 +263,8 @@ function evaluateStrategyMultiContainer(
 
 function generateScenario1Homogeneous(): PackageItem[] {
   const pkgs: PackageItem[] = [];
-  for (let i = 1; i <= 120; i++) {
+  // 1,050 boxes * 0.096 m^3 = 100.80 m^3 (~132% of 40HC 76.35 m^3 capacity)
+  for (let i = 1; i <= 1050; i++) {
     pkgs.push({
       id: `HOMO-${String(i).padStart(4, '0')}`,
       lengthMm: 600,
@@ -280,7 +290,8 @@ function generateScenario2Mixed(): PackageItem[] {
     return Math.floor(r * (max - min + 1)) + min;
   }
 
-  for (let i = 1; i <= 150; i++) {
+  // 350 packages: ~157.56 m^3 (206% of 40HC)
+  for (let i = 1; i <= 350; i++) {
     const l = Math.round(pseudoRandom(300, 1200) / 50) * 50;
     const w = Math.round(pseudoRandom(300, 1200) / 50) * 50;
     const h = Math.round(pseudoRandom(300, 1200) / 50) * 50;
@@ -316,9 +327,10 @@ function generateScenario3Difficult(): PackageItem[] {
     return Math.floor(r * (max - min + 1)) + min;
   }
 
-  for (let i = 1; i <= 80; i++) {
+  // 250 packages: 50% aspect ratio > 5, 33% noStack
+  for (let i = 1; i <= 250; i++) {
     let l: number, w: number, h: number;
-    const isOddShaped = i <= 40; // 50% are aspect ratio > 5
+    const isOddShaped = i <= 125; // 50% are aspect ratio > 5
 
     if (isOddShaped) {
       l = pseudoRandom(1800, 2400);
@@ -330,7 +342,7 @@ function generateScenario3Difficult(): PackageItem[] {
       h = pseudoRandom(400, 800);
     }
 
-    const noStack = (i % 3 === 0); // ~30%
+    const noStack = (i % 3 === 0); // ~33%
     const volM3 = (l * w * h) / 1e9;
     const weightGram = Math.max(8000, Math.round(volM3 * 220 * 1000));
 
@@ -354,33 +366,34 @@ function generateScenario3Difficult(): PackageItem[] {
 // -------------------------------------------------------------
 
 describe('Comparison Benchmark (Strategy A vs B vs C)', () => {
-  it('Run full 3 strategies on 3 scenarios', () => {
+  const allResults: StrategyResult[] = [];
+
+  it('1. Hàng đồng nhất (1,050 thùng 600x400x400)', async () => {
     const s1 = generateScenario1Homogeneous();
+    const name = '1. Hàng đồng nhất (1,050 thùng 600x400x400)';
+    allResults.push(await evaluateStrategyMultiContainer('A_MANUAL', name, (c, p) => packStrategyA(c, p), s1));
+    allResults.push(await evaluateStrategyMultiContainer('B_EXPERIENCED', name, (c, p) => packStrategyB(c, p), s1));
+    allResults.push(await evaluateStrategyMultiContainer('C_EXTREME_POINT', name, (c, p) => packContainers(c, p), s1));
+  }, 180000);
+
+  it('2. Hàng hỗn hợp (350 kiện ngẫu nhiên 300-1200mm)', async () => {
     const s2 = generateScenario2Mixed();
+    const name = '2. Hàng hỗn hợp (350 kiện ngẫu nhiên 300-1200mm)';
+    allResults.push(await evaluateStrategyMultiContainer('A_MANUAL', name, (c, p) => packStrategyA(c, p), s2));
+    allResults.push(await evaluateStrategyMultiContainer('B_EXPERIENCED', name, (c, p) => packStrategyB(c, p), s2));
+    allResults.push(await evaluateStrategyMultiContainer('C_EXTREME_POINT', name, (c, p) => packContainers(c, p), s2));
+  }, 180000);
+
+  it('3. Hàng khó (250 kiện, tỷ lệ cạnh > 5, 33% noStack)', async () => {
     const s3 = generateScenario3Difficult();
+    const name = '3. Hàng khó (250 kiện, tỷ lệ cạnh > 5, 33% noStack)';
+    allResults.push(await evaluateStrategyMultiContainer('A_MANUAL', name, (c, p) => packStrategyA(c, p), s3));
+    allResults.push(await evaluateStrategyMultiContainer('B_EXPERIENCED', name, (c, p) => packStrategyB(c, p), s3));
+    allResults.push(await evaluateStrategyMultiContainer('C_EXTREME_POINT', name, (c, p) => packContainers(c, p), s3));
+  }, 180000);
 
-    const scenarios = [
-      { name: '1. Hàng đồng nhất (120 thùng 600x400x400)', data: s1 },
-      { name: '2. Hàng hỗn hợp (150 kiện ngẫu nhiên 300-1200mm)', data: s2 },
-      { name: '3. Hàng khó (80 kiện, tỷ lệ cạnh > 5, 30% noStack)', data: s3 },
-    ];
-
-    const allResults: StrategyResult[] = [];
-
-    for (const sc of scenarios) {
-      // Strategy A
-      const resA = evaluateStrategyMultiContainer('A_MANUAL', sc.name, (c, p) => packStrategyA(c, p), sc.data);
-      allResults.push(resA);
-
-      // Strategy B
-      const resB = evaluateStrategyMultiContainer('B_EXPERIENCED', sc.name, (c, p) => packStrategyB(c, p), sc.data);
-      allResults.push(resB);
-
-      // Strategy C
-      const resC = evaluateStrategyMultiContainer('C_EXTREME_POINT', sc.name, (c, p) => packContainers(c, p), sc.data);
-      allResults.push(resC);
-    }
-
+  afterAll(() => {
+    if (allResults.length === 0) return;
     // 1. Output raw JSON to docs/benchmark-results.json
     const docsDir = path.resolve(__dirname, '../../../docs');
     if (!fs.existsSync(docsDir)) {
@@ -391,13 +404,20 @@ describe('Comparison Benchmark (Strategy A vs B vs C)', () => {
 
     // 2. Generate Markdown table
     let md = '\n\n### BẢNG KẾT QUẢ SO SÁNH 3 CHIẾN LƯỢC XẾP HÀNG (ISO 40HC)\n\n';
-    md += '| Kịch Bản | Chiến Lược | Lấp Đầy Cont 1 (%) | Kiện Đặt Cont 1 | Số Cont Cần Chở | CoG X (%) | Thời Gian (ms) | Chênh Lệch Fill (C - A) | Cont Tiết Kiệm (A - C) |\n';
-    md += '| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n';
+    md += '| Kịch Bản | Thể Tích Đầu Vào (m³) | Chiến Lược | Lấp Đầy Cont 1 (%) | Kiện Đặt Được / Tổng | Số Cont Cần Chở | CoG X (%) | Thời Gian (ms) | Chênh Lệch Fill (C - A) | Cont Tiết Kiệm (A - C) |\n';
+    md += '| :--- | :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n';
 
-    for (let i = 0; i < scenarios.length; i++) {
+    const scenarioNames = [
+      '1. Hàng đồng nhất (1,050 thùng 600x400x400)',
+      '2. Hàng hỗn hợp (350 kiện ngẫu nhiên 300-1200mm)',
+      '3. Hàng khó (250 kiện, tỷ lệ cạnh > 5, 33% noStack)',
+    ];
+
+    for (let i = 0; i < scenarioNames.length; i++) {
       const a = allResults[i * 3];
       const b = allResults[i * 3 + 1];
       const c = allResults[i * 3 + 2];
+      if (!a || !b || !c) continue;
 
       const deltaFillCA = (c.container1FillRatePct - a.container1FillRatePct).toFixed(2);
       const savedCont = a.containersNeeded - c.containersNeeded;
@@ -405,12 +425,12 @@ describe('Comparison Benchmark (Strategy A vs B vs C)', () => {
       const deltaStr = Number(deltaFillCA) >= 0 ? `+${deltaFillCA}%` : `${deltaFillCA}%`;
       const savedStr = savedCont > 0 ? `**-${savedCont} cont**` : savedCont === 0 ? '0 cont' : `+${-savedCont} cont`;
 
-      md += `| **${scenarios[i].name}** | **A — Thủ công (Baseline)** | ${a.container1FillRatePct.toFixed(2)}% | ${a.container1PlacedCount}/${a.totalPackages} | ${a.containersNeeded} | ${a.container1CogX.toFixed(2)}% | ${a.totalTimeMs.toFixed(0)} ms | — | — |\n`;
-      md += `| | **B — Có kinh nghiệm** | ${b.container1FillRatePct.toFixed(2)}% | ${b.container1PlacedCount}/${b.totalPackages} | ${b.containersNeeded} | ${b.container1CogX.toFixed(2)}% | ${b.totalTimeMs.toFixed(0)} ms | — | — |\n`;
-      md += `| | **C — Extreme Point Engine** | **${c.container1FillRatePct.toFixed(2)}%** | **${c.container1PlacedCount}/${c.totalPackages}** | **${c.containersNeeded}** | **${c.container1CogX.toFixed(2)}%** | **${c.totalTimeMs.toFixed(0)} ms** | **${deltaStr}** | ${savedStr} |\n`;
+      md += `| **${scenarioNames[i]}** | ${a.inputVolumeM3.toFixed(2)} m³ | **A — Thủ công (Baseline)** | ${a.container1FillRatePct.toFixed(2)}% | ${a.container1PlacedCount}/${a.totalPackages} | ${a.containersNeeded} | ${a.container1CogX.toFixed(2)}% | ${a.totalTimeMs.toFixed(0)} ms | — | — |\n`;
+      md += `| | | **B — Có kinh nghiệm** | ${b.container1FillRatePct.toFixed(2)}% | ${b.container1PlacedCount}/${b.totalPackages} | ${b.containersNeeded} | ${b.container1CogX.toFixed(2)}% | ${b.totalTimeMs.toFixed(0)} ms | — | — |\n`;
+      md += `| | | **C — Extreme Point Engine** | **${c.container1FillRatePct.toFixed(2)}%** | **${c.container1PlacedCount}/${c.totalPackages}** | **${c.containersNeeded}** | **${c.container1CogX.toFixed(2)}%** | **${c.totalTimeMs.toFixed(0)} ms** | **${deltaStr}** | ${savedStr} |\n`;
     }
 
     console.log(md);
     console.log(`\nRaw results saved to: ${jsonPath}\n`);
-  }, 60000);
+  });
 });
