@@ -11,6 +11,7 @@ import { UserModule } from './modules/user/user.module';
 import { LaneModule } from './modules/lane/lane.module';
 import { ShipmentModule } from './modules/shipment/shipment.module';
 import { MatchingModule } from './modules/matching/matching.module';
+import { PackingModule } from './modules/packing/packing.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from './modules/auth/guards/roles.guard';
 import { TenantInterceptor } from './common/tenant/tenant.interceptor';
@@ -27,6 +28,7 @@ import { TenantInterceptor } from './common/tenant/tenant.interceptor';
     LaneModule,
     ShipmentModule,
     MatchingModule,
+    PackingModule,
   ],
   providers: [
     {

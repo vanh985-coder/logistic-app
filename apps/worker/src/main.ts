@@ -1,9 +1,12 @@
+// Worker entry point for LOGIX-3D Packing Engine
 import * as dotenv from 'dotenv';
 dotenv.config();
 dotenv.config({ path: '../../.env' });
 
 import { Worker, Job } from 'bullmq';
+import Redis from 'ioredis';
 import pino from 'pino';
+import { packContainers, ContainerDimension, PackageItem, PackingOptions } from '@logix/packing';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
@@ -20,18 +23,38 @@ const redisOptions = {
   host: process.env.REDIS_HOST || 'localhost',
   port: parseInt(process.env.REDIS_PORT || '6379', 10),
   password: process.env.REDIS_PASSWORD || undefined,
+  maxRetriesPerRequest: null,
 };
 
 const QUEUE_NAME = 'packing_queue';
+const redisClient = new Redis(redisOptions);
 
 logger.info({ msg: 'Starting LOGIX-3D Packing Worker...', redis: `${redisOptions.host}:${redisOptions.port}` });
 
-const worker = new Worker(
+export interface PackingJobData {
+  container: ContainerDimension;
+  packages: PackageItem[];
+  options?: PackingOptions;
+  inputHash?: string;
+}
+
+const worker = new Worker<PackingJobData>(
   QUEUE_NAME,
-  async (job: Job) => {
-    logger.info({ msg: 'Received packing job', jobId: job.id, name: job.name });
-    // Phase 4 will execute packing algorithm from @logix/packing
-    return { status: 'completed', jobId: job.id };
+  async (job: Job<PackingJobData>) => {
+    logger.info({ msg: 'Processing packing job', jobId: job.id, name: job.name });
+    const { container, packages, options, inputHash } = job.data;
+
+    // 1. Run pure TypeScript 3D Extreme Point Packing Engine
+    const result = packContainers(container, packages, options);
+
+    // 2. Cache result in Redis if inputHash is provided (TTL = 1 hour = 3600s)
+    if (inputHash) {
+      const cacheKey = `packing:result:${inputHash}`;
+      await redisClient.set(cacheKey, JSON.stringify(result), 'EX', 3600);
+      logger.info({ msg: 'Cached packing result in Redis', cacheKey, ttlSeconds: 3600 });
+    }
+
+    return result;
   },
   {
     connection: redisOptions,
@@ -63,7 +86,8 @@ async function shutdown(signal = 'SIGTERM') {
   logger.info({ msg: `Received ${signal}. Shutting down LOGIX-3D Packing Worker gracefully...` });
   try {
     await worker.close();
-    logger.info({ msg: 'BullMQ worker consumer closed. Worker shutdown completed.' });
+    await redisClient.quit();
+    logger.info({ msg: 'BullMQ worker and Redis client closed. Worker shutdown completed.' });
     process.exit(0);
   } catch (error) {
     logger.error({ msg: 'Error during worker shutdown', error });

@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { packContainers, ContainerDimension, PackageItem } from '../src/index';
 
-describe('packContainers (Phase 0 Skeleton)', () => {
-  it('should return initial skeleton packing result with center of gravity', () => {
+describe('packContainers (Phase 4 Extreme Point Engine)', () => {
+  it('should successfully place a valid package and return complete result', () => {
     const container: ContainerDimension = {
       innerLengthMm: 5898,
       innerWidthMm: 2352,
@@ -26,10 +26,13 @@ describe('packContainers (Phase 0 Skeleton)', () => {
     const result = packContainers(container, packages);
 
     expect(result).toBeDefined();
-    expect(result.centerOfGravity.xPercentage).toBe(50.0);
-    expect(result.centerOfGravity.yPercentage).toBe(50.0);
-    expect(result.algorithmVersion).toBe('1.0.0-skeleton');
-    expect(result.unplacedPackages).toHaveLength(1);
-    expect(result.unplacedPackages[0].packageId).toBe('pkg-1');
+    expect(result.algorithmVersion).toBe('4.0.0-ep-engine');
+    expect(result.placedPackages).toHaveLength(1);
+    expect(result.placedPackages[0].packageId).toBe('pkg-1');
+    expect(result.placedPackages[0].xMm).toBe(0);
+    expect(result.placedPackages[0].yMm).toBe(0);
+    expect(result.placedPackages[0].zMm).toBe(0);
+    expect(result.unplacedPackages).toHaveLength(0);
+    expect(result.fillRateBps).toBeGreaterThan(0);
   });
 });
