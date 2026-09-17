@@ -3,6 +3,25 @@ const API_BASE_URL =
 
 const DEFAULT_TIMEOUT_MS = 8000;
 
+let inMemoryAccessToken: string | null = null;
+let tokenRefreshListeners: ((token: string | null) => void)[] = [];
+
+export function setAccessToken(token: string | null) {
+  inMemoryAccessToken = token;
+  tokenRefreshListeners.forEach((listener) => listener(token));
+}
+
+export function getAccessToken(): string | null {
+  return inMemoryAccessToken;
+}
+
+export function onTokenRefreshed(listener: (token: string | null) => void) {
+  tokenRefreshListeners.push(listener);
+  return () => {
+    tokenRefreshListeners = tokenRefreshListeners.filter((l) => l !== listener);
+  };
+}
+
 export async function fetchApi<T>(
   endpoint: string,
   options?: RequestInit & { _isRetry?: boolean },
@@ -19,12 +38,9 @@ export async function fetchApi<T>(
     ...((options?.headers as Record<string, string>) || {}),
   };
 
-  // Attach auth token from localStorage (fallback to sessionStorage) if present
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken');
-    if (token && !headers['Authorization'] && !headers['authorization']) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+  // Attach auth token from memory if present
+  if (inMemoryAccessToken && !headers['Authorization'] && !headers['authorization']) {
+    headers['Authorization'] = `Bearer ${inMemoryAccessToken}`;
   }
 
   // If body is not FormData, default to application/json
@@ -57,9 +73,8 @@ export async function fetchApi<T>(
       if (refreshRes.ok) {
         const refreshData = await refreshRes.json();
         const newToken = refreshData.accessToken;
-        if (newToken && typeof window !== 'undefined') {
-          localStorage.setItem('accessToken', newToken);
-          sessionStorage.setItem('accessToken', newToken);
+        if (newToken) {
+          setAccessToken(newToken);
 
           // Retry original request with new token
           return fetchApi<T>(endpoint, {
@@ -72,12 +87,7 @@ export async function fetchApi<T>(
           });
         }
       } else {
-        // Refresh failed, clear session
-        if (typeof window !== 'undefined') {
-          localStorage.removeItem('accessToken');
-          localStorage.removeItem('user');
-          sessionStorage.clear();
-        }
+        setAccessToken(null);
       }
     } catch {
       // ignore refresh error and let original 401 throw

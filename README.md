@@ -52,6 +52,10 @@ Sau khi chạy:
 
 - [ADR 0001: Monorepo & Skeleton Architecture](docs/adr/0001-monorepo-and-skeleton-architecture.md)
 - [ADR 0002: Packing Job Polling vs. Server-Sent Events](docs/adr/0002-job-status-polling-strategy.md)
+- [ADR 0003: 3D InstancedMesh & Interaction](docs/adr/0003-3d-instancedmesh-and-interaction.md)
+- [ADR 0004: Tenant Resolution & Invalidation Strategy](docs/adr/0004-tenant-resolution-and-invalidation-strategy.md)
+- [ADR 0005: Pricing Engine, Geometric Surcharge Factor (Hg), and Versioning](docs/adr/0005-pricing-geometric-surcharge-and-versioning.md)
+- [ADR 0006: In-Memory Access Token Storage and HttpOnly Refresh Cookie Architecture](docs/adr/0006-in-memory-access-token-security.md)
 - [Sơ đồ dữ liệu 13 thực thể (ERD)](docs/erd.md)
 
 ---

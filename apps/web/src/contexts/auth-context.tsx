@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { fetchApi } from '../lib/api-client';
+import { fetchApi, setAccessToken as setApiClientToken, onTokenRefreshed } from '../lib/api-client';
 
 export interface AuthUser {
   id: string;
@@ -32,40 +32,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Initialize auth from localStorage, and attempt refresh if needed
+  // Synchronize in-memory token between api-client and React state
+  const handleUpdateToken = useCallback((token: string | null) => {
+    setAccessToken(token);
+    setApiClientToken(token);
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onTokenRefreshed((newToken) => {
+      setAccessToken(newToken);
+    });
+    return unsubscribe;
+  }, []);
+
+  // Restore session exclusively via httpOnly cookie on startup / F5 / new tab
   const initAuth = useCallback(async () => {
     try {
-      if (typeof window === 'undefined') return;
-
-      const storedToken = localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken');
-      const storedUserStr = localStorage.getItem('user') || sessionStorage.getItem('user');
-
-      if (storedToken && storedUserStr) {
-        try {
-          const parsedUser = JSON.parse(storedUserStr);
-          setUser(parsedUser);
-          setAccessToken(storedToken);
-          // ensure synchronized across storage
-          localStorage.setItem('accessToken', storedToken);
-          localStorage.setItem('user', storedUserStr);
-          setIsLoading(false);
-          return;
-        } catch {
-          // invalid stored json
-        }
+      // Clear any legacy storage artifacts to prevent XSS exposure
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('user');
+        sessionStorage.removeItem('accessToken');
+        sessionStorage.removeItem('user');
       }
 
-      // If no valid stored token, try refreshing session via httpOnly cookie
-      const res = await fetchApi<{ accessToken: string }>('/auth/refresh', {
+      // 1. Call /auth/refresh: browser automatically sends httpOnly sameSite=strict refreshToken cookie
+      const refreshRes = await fetchApi<{ accessToken: string }>('/auth/refresh', {
         method: 'POST',
       }).catch(() => null);
 
-      if (res?.accessToken) {
-        localStorage.setItem('accessToken', res.accessToken);
-        sessionStorage.setItem('accessToken', res.accessToken);
-        setAccessToken(res.accessToken);
+      if (refreshRes?.accessToken) {
+        handleUpdateToken(refreshRes.accessToken);
 
-        // Fetch current user info
+        // 2. Fetch current user profile using the new in-memory accessToken
         const me = await fetchApi<{
           id: string;
           email: string;
@@ -73,7 +72,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           phone?: string | null;
           role: string;
           company: { id: string; name: string; type: string };
-        }>('/auth/me').catch(() => null);
+        }>('/auth/me', {
+          headers: {
+            Authorization: `Bearer ${refreshRes.accessToken}`,
+          },
+        }).catch(() => null);
 
         if (me) {
           const authUser: AuthUser = {
@@ -85,30 +88,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             companyId: me.company?.id,
             companyName: me.company?.name,
           };
-          localStorage.setItem('user', JSON.stringify(authUser));
-          sessionStorage.setItem('user', JSON.stringify(authUser));
           setUser(authUser);
+        } else {
+          handleUpdateToken(null);
+          setUser(null);
         }
+      } else {
+        handleUpdateToken(null);
+        setUser(null);
       }
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [handleUpdateToken]);
 
   useEffect(() => {
     initAuth();
   }, [initAuth]);
 
   const login = useCallback((token: string, newUser: AuthUser) => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('accessToken', token);
-      localStorage.setItem('user', JSON.stringify(newUser));
-      sessionStorage.setItem('accessToken', token);
-      sessionStorage.setItem('user', JSON.stringify(newUser));
-    }
-    setAccessToken(token);
+    handleUpdateToken(token);
     setUser(newUser);
-  }, []);
+  }, [handleUpdateToken]);
 
   const logout = useCallback(async () => {
     try {
@@ -116,32 +117,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // ignore
     }
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('user');
-      sessionStorage.clear();
-    }
-    setAccessToken(null);
+    handleUpdateToken(null);
     setUser(null);
     router.push('/login');
-  }, [router]);
+  }, [handleUpdateToken, router]);
 
   const refreshAuth = useCallback(async (): Promise<boolean> => {
     try {
       const res = await fetchApi<{ accessToken: string }>('/auth/refresh', {
         method: 'POST',
       });
-      if (res.accessToken) {
-        localStorage.setItem('accessToken', res.accessToken);
-        sessionStorage.setItem('accessToken', res.accessToken);
-        setAccessToken(res.accessToken);
+      if (res?.accessToken) {
+        handleUpdateToken(res.accessToken);
         return true;
       }
       return false;
     } catch {
+      handleUpdateToken(null);
+      setUser(null);
       return false;
     }
-  }, []);
+  }, [handleUpdateToken]);
 
   const value = useMemo(
     () => ({

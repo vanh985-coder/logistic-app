@@ -36,7 +36,7 @@ export default function DashboardLayout({
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-400">
         <RefreshCw className="h-7 w-7 animate-spin text-blue-500 mb-3" />
-        <div className="text-xs">Đang kiểm tra quyền truy cập...</div>
+        <div className="text-xs">Đang khôi phục phiên làm việc...</div>
       </div>
     );
   }
