@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState } from 'react';
 import Link from 'next/link';
@@ -11,6 +11,7 @@ import {
   calcVolumeMm3,
   cbmFromVolumeMm3,
   kgFromWeightGrams,
+  parseAndValidateExcelRows,
   PackagePricingInput,
   PricingConfigInput,
 } from '@logix/shared';
@@ -165,74 +166,42 @@ export default function NewShipmentPage() {
       const buffer = await file.arrayBuffer();
       const wb = xlsx.read(buffer, { type: 'array' });
       const firstSheet = wb.Sheets[wb.SheetNames[0]];
-      const rows: any[][] = xlsx.utils.sheet_to_json(firstSheet, { header: 1 });
+      const rawRows: any[][] = xlsx.utils.sheet_to_json(firstSheet, {
+        header: 1,
+        defval: '',
+        blankrows: false,
+      });
 
-      if (rows.length < 2) {
-        setExcelErrors([{ row: 1, column: 'FILE', message: 'File Excel cần có ít nhất 1 dòng dữ liệu' }]);
-        setIsUploading(false);
-        return;
+      // Use shared validator so logic is identical between frontend preview & backend
+      const result = parseAndValidateExcelRows(rawRows);
+
+      if (result.errors.length > 0) {
+        setExcelErrors(result.errors);
       }
 
-      const errors: ExcelError[] = [];
-      const newPackages: PackageItem[] = [];
-      const seen = new Set<string>();
-
-      for (let i = 1; i < rows.length; i++) {
-        const row = rows[i];
-        const rowNum = i + 1;
-        if (!row || row.every((c: any) => c === '' || c === null || c === undefined)) continue;
-
-        const code = String(row[0] ?? '').trim();
-        const length = Number(row[1]);
-        const width = Number(row[2]);
-        const height = Number(row[3]);
-        const weight = Number(row[4]);
-        const fragileVal = String(row[5] ?? '').trim().toLowerCase();
-        const isFragile = ['true', '1', 'yes', 'có', 'co'].includes(fragileVal);
-        const noStackVal = String(row[6] ?? '').trim().toLowerCase();
-        const noStack = ['true', '1', 'yes', 'có', 'co'].includes(noStackVal);
-        const rawType = String(row[7] ?? 'BOX').trim().toUpperCase();
-
-        if (!code) {
-          errors.push({ row: rowNum, column: 'Mã kiện (Cột 1)', message: 'Mã kiện không được để trống' });
-        } else if (seen.has(code.toUpperCase())) {
-          errors.push({ row: rowNum, column: 'Mã kiện (Cột 1)', message: `Mã kiện "${code}" bị trùng lặp` });
-        } else {
-          seen.add(code.toUpperCase());
-        }
-
-        if (isNaN(length) || length <= 0) errors.push({ row: rowNum, column: 'Dài mm (Cột 2)', message: 'Chiều dài phải > 0' });
-        if (isNaN(width) || width <= 0) errors.push({ row: rowNum, column: 'Rộng mm (Cột 3)', message: 'Chiều rộng phải > 0' });
-        if (isNaN(height) || height <= 0) errors.push({ row: rowNum, column: 'Cao mm (Cột 4)', message: 'Chiều cao phải > 0' });
-        if (isNaN(weight) || weight <= 0) errors.push({ row: rowNum, column: 'Trọng lượng g (Cột 5)', message: 'Trọng lượng phải > 0' });
-
-        let pkgType = PackageType.BOX;
-        if (['BOX', 'PALLET', 'CRATE', 'OTHER'].includes(rawType)) {
-          pkgType = rawType as PackageType;
-        }
-
-        if (errors.length === 0) {
-          newPackages.push({
-            id: String(Date.now() + i),
-            packageCode: code,
-            lengthMm: length,
-            widthMm: width,
-            heightMm: height,
-            weightGrams: weight,
-            isFragile,
-            noStack,
-            packageType: pkgType,
-          });
-        }
-      }
-
-      if (errors.length > 0) {
-        setExcelErrors(errors);
-      } else if (newPackages.length > 0) {
-        setPackages(newPackages);
+      if (result.packages.length > 0) {
+        setPackages(
+          result.packages.map((p, idx) => ({
+            id: String(Date.now() + idx),
+            packageCode: p.packageCode,
+            lengthMm: p.lengthMm,
+            widthMm: p.widthMm,
+            heightMm: p.heightMm,
+            weightGrams: p.weightGrams,
+            isFragile: p.isFragile,
+            noStack: p.noStack,
+            packageType: p.packageType,
+          })),
+        );
       }
     } catch {
-      setExcelErrors([{ row: 0, column: 'FILE', message: 'Không thể đọc file Excel. Vui lòng kiểm tra định dạng' }]);
+      setExcelErrors([
+        {
+          row: 0,
+          column: 'FILE',
+          message: 'Không thể đọc file Excel. Vui lòng kiểm tra định dạng',
+        },
+      ]);
     } finally {
       setIsUploading(false);
     }
@@ -271,10 +240,11 @@ export default function NewShipmentPage() {
         body: JSON.stringify({ laneId: selectedLaneId }),
       });
 
-      for (const p of packages) {
-        await fetchApi(`/shipments/${shipment.id}/packages`, {
-          method: 'POST',
-          body: JSON.stringify({
+      // Batch insert packages in a single request instead of N+1 requests
+      await fetchApi(`/shipments/${shipment.id}/packages/batch`, {
+        method: 'POST',
+        body: JSON.stringify({
+          packages: packages.map((p) => ({
             packageCode: p.packageCode,
             lengthMm: p.lengthMm,
             widthMm: p.widthMm,
@@ -283,9 +253,9 @@ export default function NewShipmentPage() {
             isFragile: p.isFragile,
             noStack: p.noStack,
             packageType: p.packageType,
-          }),
-        });
-      }
+          })),
+        }),
+      });
 
       if (autoSubmit) {
         await fetchApi(`/shipments/${shipment.id}/submit`, {

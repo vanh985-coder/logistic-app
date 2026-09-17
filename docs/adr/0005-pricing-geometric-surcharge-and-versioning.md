@@ -1,4 +1,4 @@
-﻿# ADR 0005: Pricing Engine, Geometric Surcharge Factor (Hg), and Effective-Dating Versioning
+# ADR 0005: Pricing Engine, Geometric Surcharge Factor (Hg), and Effective-Dating Versioning
 
 ## Context
 Trong hệ thống logistics B2B **LOGIX-3D**, chi phí vận chuyển phụ thuộc vào hai yếu tố kích thước cơ bản (thể tích quy đổi $V$ và khối lượng thực tế $W$) cùng các đặc tính hình học xếp dỡ thực tế của từng kiện hàng (khả năng chịu lực, tỉ lệ cạnh, cờ không cho phép xếp chồng).
@@ -65,3 +65,9 @@ Hệ số $H_g$ được phân thành 3 mức độ rõ ràng:
   - Lưu trữ thể tích nhất quán, loại bỏ nguy cơ lệch số liệu giữa mm³ và m³.
 - **Đánh đổi:**
   - Xử lý `BigInt` trong JavaScript yêu cầu hàm serialization phù hợp khi chuyển đổi sang JSON (tránh `TypeError: Do not know how to serialize a BigInt`).
+
+## Giới hạn Hiện tại và Định hướng Chuyển đổi Multi-tenant
+- **Phân loại hiện tại:** `PricingConfig` và `Lane` đang được xếp vào `GLOBAL_MODELS` vì ở giai đoạn hiện tại (Phase 2), toàn bộ biểu giá do sàn (`PLATFORM_ADMIN`) quy định tập trung dùng chung cho các Shipper.
+- **Ranh giới bảo mật:** Để bảo vệ thông tin thương mại nhạy cảm, API công khai (`GET /lanes`, `GET /lanes/:id`) cho khách hàng chỉ trả về duy nhất phiên bản giá đang có hiệu lực (`currentPricingConfig`). Toàn bộ lịch sử các phiên bản giá cũ được khóa chặt và chỉ mở cho `PLATFORM_ADMIN` qua endpoint riêng biệt `GET /lanes/:id/pricing-history`.
+- **Định hướng Phase tiếp theo:** Nếu hệ thống mở rộng cho phép các forwarder (`FWD`) tự do niêm yết biểu giá cạnh tranh riêng cho từng khách hàng hoặc tuyến đường của họ, bảng `PricingConfig` (và có thể cả `Lane`) **BẮT BUỘC PHẢI CHUYỂN SANG `TENANT_MODELS`**, bổ sung cột `companyId` và áp dụng đầy đủ quy tắc lọc dòng tự động để đảm bảo tuyệt đối không rò rỉ giá giữa các forwarder đối thủ.
+

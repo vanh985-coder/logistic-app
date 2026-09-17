@@ -1,4 +1,4 @@
-﻿import {
+import {
   Injectable,
   NotFoundException,
   ConflictException,
@@ -23,10 +23,13 @@ export class LaneService {
       },
     });
 
-    return lanes.map((lane: any) => ({
-      ...lane,
-      currentPricingConfig: lane.pricingConfigs[0] ?? null,
-    }));
+    return lanes.map((lane: any) => {
+      const { pricingConfigs, ...laneData } = lane;
+      return {
+        ...laneData,
+        currentPricingConfig: pricingConfigs[0] ?? null,
+      };
+    });
   }
 
   async findById(id: string) {
@@ -34,7 +37,8 @@ export class LaneService {
       where: { id },
       include: {
         pricingConfigs: {
-          orderBy: { version: 'desc' },
+          where: { effectiveTo: null },
+          take: 1,
         },
       },
     });
@@ -43,13 +47,26 @@ export class LaneService {
       throw new NotFoundException(`Lane with ID "${id}" not found`);
     }
 
-    const currentPricingConfig =
-      lane.pricingConfigs.find((pc: any) => pc.effectiveTo === null) ?? null;
-
+    const { pricingConfigs, ...laneData } = lane;
     return {
-      ...lane,
-      currentPricingConfig,
+      ...laneData,
+      currentPricingConfig: pricingConfigs[0] ?? null,
     };
+  }
+
+  async getPricingHistory(laneId: string) {
+    const lane = await (this.prisma as any).lane.findUnique({
+      where: { id: laneId },
+    });
+
+    if (!lane) {
+      throw new NotFoundException(`Lane with ID "${laneId}" not found`);
+    }
+
+    return (this.prisma as any).pricingConfig.findMany({
+      where: { laneId },
+      orderBy: { version: 'desc' },
+    });
   }
 
   async createLane(dto: CreateLaneDto) {

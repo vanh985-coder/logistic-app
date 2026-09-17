@@ -1,4 +1,4 @@
-﻿import { PackageType, ShipmentStatus } from '@logix/shared';
+import { PackageType, ShipmentStatus } from '@logix/shared';
 
 export interface CreateShipmentDto {
   laneId: string;
@@ -20,3 +20,8 @@ export interface ShipmentQueryDto {
   limit?: number;
   status?: ShipmentStatus;
 }
+
+export interface BatchAddPackagesDto {
+  packages: AddPackageDto[];
+}
+

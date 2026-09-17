@@ -1,4 +1,4 @@
-﻿import {
+import {
   Controller,
   Get,
   Post,
@@ -44,6 +44,16 @@ export class ShipmentController {
   ) {
     return this.shipmentService.addPackage(shipmentId, dto);
   }
+
+  @Post(':id/packages/batch')
+  async addPackagesBatch(
+    @Param('id') shipmentId: string,
+    @Body() body: { packages?: AddPackageDto[] } | AddPackageDto[],
+  ) {
+    const packages = Array.isArray(body) ? body : (body.packages ?? []);
+    return this.shipmentService.addPackagesBatch(shipmentId, packages);
+  }
+
 
   @Delete(':id/packages/:packageId')
   async deletePackage(

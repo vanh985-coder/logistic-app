@@ -1,4 +1,4 @@
-﻿import {
+import {
   Controller,
   Get,
   Post,
@@ -23,6 +23,12 @@ export class LaneController {
   @Get(':id')
   async findById(@Param('id') id: string) {
     return this.laneService.findById(id);
+  }
+
+  @Roles(UserRole.PLATFORM_ADMIN)
+  @Get(':id/pricing-history')
+  async getPricingHistory(@Param('id') id: string) {
+    return this.laneService.getPricingHistory(id);
   }
 
   @Roles(UserRole.PLATFORM_ADMIN)

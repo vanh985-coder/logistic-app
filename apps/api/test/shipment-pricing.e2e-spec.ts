@@ -173,15 +173,29 @@ describe('Shipment & Pricing Engine (e2e)', () => {
       expect(res.body.version).toBe(2);
       expect(res.body.effectiveTo).toBeNull();
 
-      // Verify lane details
+      // Verify lane details does NOT expose historical pricingConfigs
       const laneDetails = await request(app.getHttpServer())
         .get(`/lanes/${laneId}`)
         .set('Authorization', `Bearer ${tokenA}`)
         .expect(200);
 
       expect(laneDetails.body.currentPricingConfig.version).toBe(2);
-      expect(laneDetails.body.pricingConfigs.length).toBe(2);
-      const v1 = laneDetails.body.pricingConfigs.find((pc: any) => pc.version === 1);
+      expect(laneDetails.body.pricingConfigs).toBeUndefined();
+
+      // Verify non-admin CANNOT view pricing history (403)
+      await request(app.getHttpServer())
+        .get(`/lanes/${laneId}/pricing-history`)
+        .set('Authorization', `Bearer ${tokenA}`)
+        .expect(403);
+
+      // Verify PLATFORM_ADMIN CAN view pricing history (200)
+      const history = await request(app.getHttpServer())
+        .get(`/lanes/${laneId}/pricing-history`)
+        .set('Authorization', `Bearer ${tokenPlatform}`)
+        .expect(200);
+
+      expect(history.body.length).toBe(2);
+      const v1 = history.body.find((pc: any) => pc.version === 1);
       expect(v1.effectiveTo).not.toBeNull();
     });
 
@@ -320,6 +334,36 @@ describe('Shipment & Pricing Engine (e2e)', () => {
       expect(res.body.totalPackages).toBe(1);
       expect(res.body.packages[0].packageCode).toBe('PKG-NO-STACK');
     });
+
+    it('should add multiple packages via POST /shipments/:id/packages/batch in a single call', async () => {
+      const res = await request(app.getHttpServer())
+        .post(`/shipments/${shipmentAId}/packages/batch`)
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({
+          packages: [
+            {
+              packageCode: 'PKG-BATCH-1',
+              lengthMm: 500,
+              widthMm: 400,
+              heightMm: 300,
+              weightGrams: 8000,
+            },
+            {
+              packageCode: 'PKG-BATCH-2',
+              lengthMm: 600,
+              widthMm: 500,
+              heightMm: 400,
+              weightGrams: 15000,
+              isFragile: true,
+            },
+          ],
+        })
+        .expect(201);
+
+      expect(res.body.packages.some((p: any) => p.packageCode === 'PKG-BATCH-1')).toBe(true);
+      expect(res.body.packages.some((p: any) => p.packageCode === 'PKG-BATCH-2')).toBe(true);
+      expect(res.body.totalPackages).toBe(3); // 1 previous + 2 batch
+    });
   });
 
   describe('4. Excel Import with Row-by-Row Error Reporting', () => {
@@ -369,7 +413,7 @@ describe('Shipment & Pricing Engine (e2e)', () => {
 
       expect(res.body.success).toBe(true);
       expect(res.body.importedCount).toBe(2);
-      expect(res.body.shipment.totalPackages).toBe(3); // 1 previous + 2 new
+      expect(res.body.shipment.totalPackages).toBe(5); // 3 previous + 2 new
     });
   });
 

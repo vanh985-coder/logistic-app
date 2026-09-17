@@ -159,6 +159,46 @@ export class ShipmentService {
     return this.findById(shipmentId);
   }
 
+  async addPackagesBatch(shipmentId: string, packagesDto: AddPackageDto[]) {
+    const shipment = await this.findById(shipmentId);
+    if (shipment.status !== ShipmentStatus.DRAFT && shipment.status !== ShipmentStatus.PRICED) {
+      throw new BadRequestException('Cannot add packages to a non-draft shipment');
+    }
+
+    if (!Array.isArray(packagesDto) || packagesDto.length === 0) {
+      throw new BadRequestException('Packages array cannot be empty');
+    }
+
+    for (const p of packagesDto) {
+      if (p.lengthMm <= 0 || p.widthMm <= 0 || p.heightMm <= 0 || p.weightGrams <= 0) {
+        throw new BadRequestException(`Dimensions and weight must be positive for package "${p.packageCode}"`);
+      }
+    }
+
+    const packageData = packagesDto.map((dto) => ({
+      shipmentId,
+      packageCode: dto.packageCode.trim(),
+      lengthMm: Math.round(dto.lengthMm),
+      widthMm: Math.round(dto.widthMm),
+      heightMm: Math.round(dto.heightMm),
+      volumeMm3: calcVolumeMm3(dto.lengthMm, dto.widthMm, dto.heightMm),
+      weightGrams: Math.round(dto.weightGrams),
+      isFragile: Boolean(dto.isFragile),
+      noStack: Boolean(dto.noStack),
+      packageType: dto.packageType ?? PackageType.BOX,
+    }));
+
+    await (this.prisma as any).package.createMany({
+      data: packageData,
+    });
+
+    // Recalculate ONCE after inserting all packages in batch
+    await this.recalculateShipment(shipmentId);
+
+    return this.findById(shipmentId);
+  }
+
+
   async deletePackage(shipmentId: string, packageId: string) {
     const shipment = await this.findById(shipmentId);
     if (shipment.status !== ShipmentStatus.DRAFT && shipment.status !== ShipmentStatus.PRICED) {
