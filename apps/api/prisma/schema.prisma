@@ -105,6 +105,8 @@ enum ShipmentStatus {
   DRAFT
   PRICED
   SUBMITTED
+  MATCHING
+  GROUPED
   CONFIRMED
   IN_TRANSIT
   DELIVERED
@@ -135,6 +137,7 @@ model Lane {
 
   pricingConfigs PricingConfig[]
   shipments      Shipment[]
+  matchGroups    MatchGroup[]
 
   @@map("lanes")
 }
@@ -186,6 +189,7 @@ model Shipment {
   deletedAt        DateTime?
 
   packages         Package[]
+  matchGroupShipments MatchGroupShipment[]
 
   @@index([companyId, status, createdAt(sort: Desc)])
   @@index([laneId])
@@ -213,5 +217,68 @@ model Package {
   @@index([companyId, shipmentId])
   @@index([shipmentId])
   @@map("packages")
+}
+
+enum MatchGroupStatus {
+  DRAFT
+  PROPOSED
+  CONFIRMED
+  CLOSED
+  CANCELLED
+}
+
+model ContainerType {
+  id             String       @id @default(uuid())
+  code           String       @unique
+  name           String
+  innerLengthMm  Int
+  innerWidthMm   Int
+  innerHeightMm  Int
+  volumeMm3      BigInt
+  maxPayloadGram BigInt
+  tareWeightGram BigInt
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  matchGroups    MatchGroup[]
+
+  @@map("container_types")
+}
+
+model MatchGroup {
+  id                    String              @id @default(uuid())
+  code                  String              @unique
+  laneId                String
+  lane                  Lane                @relation(fields: [laneId], references: [id])
+  targetContainerTypeId String
+  targetContainerType   ContainerType       @relation(fields: [targetContainerTypeId], references: [id])
+  status                MatchGroupStatus    @default(PROPOSED)
+  cutoffTime            DateTime?
+  totalCbmMm3           BigInt              @default(0)
+  totalWeightGrams      BigInt              @default(0)
+  volumeFillBps         Int                 @default(0)
+  weightFillBps         Int                 @default(0)
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  matchGroupShipments   MatchGroupShipment[]
+
+  @@index([laneId, status])
+  @@map("match_groups")
+}
+
+model MatchGroupShipment {
+  id           String     @id @default(uuid())
+  matchGroupId String
+  matchGroup   MatchGroup @relation(fields: [matchGroupId], references: [id], onDelete: Cascade)
+  shipmentId   String
+  shipment     Shipment   @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  joinedAt     DateTime   @default(now())
+
+  @@unique([matchGroupId, shipmentId])
+  @@index([matchGroupId])
+  @@index([shipmentId])
+  @@map("match_group_shipments")
 }
 

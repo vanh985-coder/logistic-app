@@ -1,6 +1,12 @@
 export const TENANT_MODELS = ['User', 'RefreshToken', 'Shipment', 'Package'] as const;
 export const TENANT_SELF_MODELS = ['Company'] as const;
-export const GLOBAL_MODELS = ['Lane', 'PricingConfig'] as const;
+export const GLOBAL_MODELS = [
+  'Lane',
+  'PricingConfig',
+  'ContainerType',
+  'MatchGroup',
+  'MatchGroupShipment',
+] as const;
 
 export type TenantModel = (typeof TENANT_MODELS)[number];
 export type TenantSelfModel = (typeof TENANT_SELF_MODELS)[number];

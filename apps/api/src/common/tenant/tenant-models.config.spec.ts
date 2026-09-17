@@ -15,6 +15,9 @@ describe('TenantModelsConfig - Fail Fast Bootstrap Validation', () => {
       'PricingConfig',
       'Shipment',
       'Package',
+      'ContainerType',
+      'MatchGroup',
+      'MatchGroupShipment',
     ];
     expect(() =>
       validateAllModelsClassified(

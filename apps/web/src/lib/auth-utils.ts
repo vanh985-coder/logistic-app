@@ -43,8 +43,8 @@ export function isRouteAllowedForRole(pathname: string, role?: string | null): b
     return role.startsWith('CFS');
   }
 
-  // Generic shipments management is accessible to all logged-in business users
-  if (pathname.startsWith('/shipments')) {
+  // Generic shipments & match groups management is accessible to all logged-in business users
+  if (pathname.startsWith('/shipments') || pathname.startsWith('/match-groups')) {
     return true;
   }
 
@@ -56,6 +56,7 @@ export function getNavItemsForRole(role?: string | null): NavItem[] {
 
   const items: NavItem[] = [
     { label: '📦 Quản lý Lô hàng', href: '/shipments' },
+    { label: '🧩 Ghép Hàng & Consol', href: '/match-groups' },
   ];
 
   if (role === UserRole.PLATFORM_ADMIN) {

@@ -10,6 +10,7 @@ import { CompanyModule } from './modules/company/company.module';
 import { UserModule } from './modules/user/user.module';
 import { LaneModule } from './modules/lane/lane.module';
 import { ShipmentModule } from './modules/shipment/shipment.module';
+import { MatchingModule } from './modules/matching/matching.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from './modules/auth/guards/roles.guard';
 import { TenantInterceptor } from './common/tenant/tenant.interceptor';
@@ -25,6 +26,7 @@ import { TenantInterceptor } from './common/tenant/tenant.interceptor';
     UserModule,
     LaneModule,
     ShipmentModule,
+    MatchingModule,
   ],
   providers: [
     {

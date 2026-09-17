@@ -56,6 +56,7 @@ Sau khi chạy:
 - [ADR 0004: Tenant Resolution & Invalidation Strategy](docs/adr/0004-tenant-resolution-and-invalidation-strategy.md)
 - [ADR 0005: Pricing Engine, Geometric Surcharge Factor (Hg), and Versioning](docs/adr/0005-pricing-geometric-surcharge-and-versioning.md)
 - [ADR 0006: In-Memory Access Token Storage and HttpOnly Refresh Cookie Architecture](docs/adr/0006-in-memory-access-token-security.md)
+- [ADR 0007: Consolidation Matching Engine and Container Allocation Strategy](docs/adr/0007-consolidation-matching-engine-and-container-allocation.md)
 - [Sơ đồ dữ liệu 13 thực thể (ERD)](docs/erd.md)
 
 ---
@@ -63,9 +64,9 @@ Sau khi chạy:
 ## Lộ Trình Triển Khai
 
 - [x] **Phase 0:** Walking skeleton (Monorepo, docker-compose, Prisma 0_init, CI, Next.js calls NestJS)
-- [ ] **Phase 1:** Xác thực & Doanh nghiệp (Argon2id, JWT rotation, RBAC guard, Onboarding)
-- [ ] **Phase 2:** Lô hàng & Tính cước (CRUD Shipment/Package, công thức cước Hg, import Excel)
-- [ ] **Phase 3:** Matching (Ghép lô hàng cùng tuyến, gợi ý phương án)
+- [x] **Phase 1:** Xác thực & Doanh nghiệp (Argon2id, JWT rotation, RBAC guard, Onboarding)
+- [x] **Phase 2:** Lô hàng & Tính cước (CRUD Shipment/Package, công thức cước Hg, import Excel)
+- [x] **Phase 3:** Matching (Ghép lô hàng cùng tuyến, gợi ý phương án)
 - [ ] **Phase 4:** Lõi thuật toán xếp hàng 3D & Worker BullMQ
 - [ ] **Phase 5:** Màn hình 3D React Three Fiber (InstancedMesh, thanh trượt layer, CoG)
 - [ ] **Phase 6:** Forwarder, CFS, Tracking & Nghiệm thu
