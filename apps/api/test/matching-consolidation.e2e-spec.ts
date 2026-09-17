@@ -22,9 +22,7 @@ describe('Phase 3: Matching Engine & Consolidation (e2e)', () => {
   let tokenShipperA: string;
   let companyAId: string;
   let tokenShipperB: string;
-  let companyBId: string;
   let tokenShipperGamma: string;
-  let companyGammaId: string;
   let tokenFwd: string;
   let companyFwdId: string;
   let tokenPlatform: string;
@@ -89,7 +87,6 @@ describe('Phase 3: Matching Engine & Consolidation (e2e)', () => {
       .send({ email: `shipper_b_${testId}@example.com`, password: 'Password123!' })
       .expect(200);
     tokenShipperB = loginB.body.accessToken;
-    companyBId = loginB.body.user.companyId;
 
     // 3. Register & Login Shipper Gamma (outsider shipper)
     await request(app.getHttpServer())
@@ -109,7 +106,6 @@ describe('Phase 3: Matching Engine & Consolidation (e2e)', () => {
       .send({ email: `shipper_g_${testId}@example.com`, password: 'Password123!' })
       .expect(200);
     tokenShipperGamma = loginGamma.body.accessToken;
-    companyGammaId = loginGamma.body.user.companyId;
 
     // 4. Register Forwarder Delta
     await request(app.getHttpServer())
