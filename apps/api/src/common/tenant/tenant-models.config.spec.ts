@@ -2,6 +2,7 @@ import {
   validateAllModelsClassified,
   TENANT_MODELS,
   TENANT_SELF_MODELS,
+  TENANT_RELATION_MODELS,
   GLOBAL_MODELS,
 } from './tenant-models.config';
 
@@ -24,6 +25,7 @@ describe('TenantModelsConfig - Fail Fast Bootstrap Validation', () => {
         knownModels,
         TENANT_MODELS,
         TENANT_SELF_MODELS,
+        TENANT_RELATION_MODELS,
         GLOBAL_MODELS,
       ),
     ).not.toThrow();
@@ -36,8 +38,10 @@ describe('TenantModelsConfig - Fail Fast Bootstrap Validation', () => {
         unclassifiedModels,
         TENANT_MODELS,
         TENANT_SELF_MODELS,
+        TENANT_RELATION_MODELS,
         GLOBAL_MODELS,
       ),
     ).toThrowError(/NewUnclassifiedOrder/);
   });
 });
+

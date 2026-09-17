@@ -1,24 +1,42 @@
-# ADR 0007: Consolidation Matching Engine and Container Allocation Strategy
+# ADR 0007: Consolidation Matching Engine, Multi-Tenant Isolation, and Container Allocation Strategy
+
+## Status
+Accepted (Amended to include `TENANT_RELATION_MODELS` and clarify 1D preliminary ceiling vs Phase 4 3D KPI floor)
 
 ## Context
 Trong vận tải biển quốc tế và nội địa, hàng lẻ LCL (*Less than Container Load*) từ nhiều chủ hàng độc lập (*Shippers*) cần được gom thành các lô hàng nguyên container (*FCL - Full Container Load*) trên cùng tuyến hành trình (*Lane*). Việc ghép hàng đặt ra những thách thức kỹ thuật cốt lõi:
 
 1. **Ràng Buộc Vật Lý Kép (Volume & Weight Boundaries):** Vỏ container chuẩn ISO có giới hạn thể tích lòng cont ($V_{\text{cont}}$) và giới hạn tải trọng hàng hóa tối đa ($W_{\text{payload}}$). Hàng nặng làm chạm trần tải trọng trước khi đầy thể tích (vận tải theo trọng lượng), trong khi hàng cồng kềnh làm chạm trần thể tích trước khi đầy tải trọng (vận tải theo thể tích).
-2. **Hệ Số Rỗng Vật Lý Trong Thực Tế (Packing Factor Void Ratio):** Khi đóng ghép các thùng carton có kích thước không đồng nhất hoặc hàng có cờ `noStack`/`isFragile`, tỷ lệ lấp đầy thể tích lý thuyết không thể đạt 100% (ngưỡng an toàn thực tế tối đa là $\approx 92.00\% = 9200\text{ bps}$).
-3. **Mâu Thuẫn Kiến Trúc Đa Thuê Bao (Multi-Tenancy vs. Cross-Tenant Aggregation):** Lô hàng `Shipment` thuộc sở hữu của một doanh nghiệp Shipper cụ thể (`companyId`). Tuy nhiên, một nhóm gom `MatchGroup` lại tập hợp hàng hóa từ nhiều Shipper khác nhau vào cùng một vỏ container do Forwarder điều phối. Nếu `MatchGroup` bị áp bộ lọc tự động `where: { companyId }` của extension Prisma đa thuê bao, hệ thống sẽ không thể hiển thị nhóm gom cho nhiều Shipper và Forwarder cùng khai thác.
+2. **Ngưỡng Trần Sơ Bộ 1D (Phase 3) vs. Cam Kết KPI Tối Thiểu 3D (Phase 4):**
+   - **Giai đoạn sơ bộ 1D (Phase 3):** Thuật toán ghép hàng chạy trên quy mô tổng thể tích ($mm^3$) và khối lượng ($g$). Nhằm tối ưu hóa hiệu quả kinh tế và dành biên độ dung sai vật lý cho bước xếp dỡ 3D sau này, thuật toán áp dụng ngưỡng trần sơ bộ `MAX_PRELIMINARY_FILL_BPS = 9500` (95.00%).
+   - **Cam kết Marketing & KPI 3D Packing (Phase 4):** Ngưỡng $\ge 92\%$ là **cam kết sàn (minimum KPI floor)** mà lõi thuật toán đóng gói không gian 3D (Extreme Point Packing Engine) phải đạt được khi xếp tọa độ cụ thể $(x, y, z)$. Đặt trần 92% ở khâu sơ bộ 1D là đảo ngược bản chất nghiệp vụ; do đó Phase 3 dùng trần dung sai 95% để cho phép gom tối đa hàng hóa trước khi giải bài toán không gian 3 chiều.
+3. **Mâu Thuẫn Kiến Trúc Đa Thuê Bao (Multi-Tenancy vs. Cross-Tenant Aggregation):** Lô hàng `Shipment` thuộc sở hữu của một doanh nghiệp Shipper cụ thể (`companyId`). Tuy nhiên, một nhóm gom `MatchGroup` lại tập hợp hàng hóa từ nhiều Shipper khác nhau vào cùng một vỏ container do Forwarder điều phối. Nếu `MatchGroup` bị đặt vào `GLOBAL_MODELS`, lớp bảo vệ đa thuê bao bị vô hiệu hóa hoàn toàn, phụ thuộc vào việc lập trình viên phải nhớ kiểm tra thủ công tại từng service/controller (nguy cơ rò rỉ dữ liệu thương mại cạnh tranh).
 4. **Độ Chính Xác Số Học Tuyệt Đối (Zero-Float Guarantee):** Toàn bộ số liệu dung tích ($mm^3$), trọng lượng (gram) và tỷ lệ lấp đầy (basis points $10000 = 100.00\%$) phải dùng số nguyên `BigInt` và `Int`, loại bỏ triệt để sai số dấu phẩy động IEEE-754.
 
 ---
 
 ## Decision
 
-### 1. Phân Loại Mô Hình Dữ Liệu Đa Thuê Bao (Multi-Tenant Model Classification)
-- `ContainerType`, `MatchGroup`, và `MatchGroupShipment` được phân loại rõ ràng trong `GLOBAL_MODELS` tại `tenant-models.config.ts`.
-- **Cơ chế Bảo mật Phân quyền Cấp Ứng dụng (Application-Level Authorization):**
-  - **Forwarder & Platform Admin:** Có toàn quyền truy vấn, lập kế hoạch, kích hoạt thuật toán đề xuất (`POST /match-groups/propose`), chốt ghép (`POST /match-groups/:id/confirm`) hoặc hủy (`POST /match-groups/:id/cancel`).
-  - **Shipper:** Khi truy vấn danh sách `GET /match-groups`, bộ lọc nghiệp vụ cưỡng chế chỉ trả về các nhóm có chứa ít nhất một lô hàng của Shipper đó (`matchGroupShipments.some.shipment.companyId === user.companyId`). Khi truy vấn trực tiếp `GET /match-groups/:id`, nếu Shipper không có lô hàng trong nhóm sẽ bị trả về ngay mã lỗi **HTTP 403 Forbidden**.
+### 1. Kiến Trúc Đa Thuê Bao: Cơ Chế `TENANT_RELATION_MODELS` & Defense-in-Depth
+
+Để giải quyết triệt để bài toán bảo mật đa thuê bao cho nhóm ghép hàng, 3 phương án kiến trúc đã được cân nhắc:
+
+- **Phương án A (Global + Manual Join):** Giữ `MatchGroup` trong `GLOBAL_MODELS` và viết code join thủ công qua `MatchGroupShipment` ở từng service.
+  - *Đánh giá:* **Bác bỏ**. Vi phạm nguyên tắc bảo mật phòng thủ chiều sâu (defense-in-depth). Chỉ cần một lập trình viên tạo endpoint mới hoặc quên lọc ở tầng service là toàn bộ dữ liệu thương mại của các shipper bị lộ.
+- **Phương án C (Admin/FWD Only View):** MatchGroup chỉ FWD và ADMIN thấy được; Shipper chỉ thấy view tổng hợp qua endpoint riêng biệt.
+  - *Đánh giá:* **Bác bỏ**. Gây phân mảnh schema API, làm phức tạp frontend và sinh ra nhiều truy vấn trùng lặp.
+- **Phương án B (LỰA CHỌN) — `TENANT_RELATION_MODELS` kết hợp `companyId` trên `MatchGroupShipment`:**
+  - `MatchGroupShipment` được xếp vào `TENANT_MODELS`. Cột `companyId` được bổ sung trực tiếp vào bảng `match_group_shipments` cùng chỉ mục kép `@@index([companyId, matchGroupId])` và khóa ngoại trỏ tới `Company`.
+  - `MatchGroup` được xếp vào danh mục mới: `TENANT_RELATION_MODELS`.
+  - **Prisma Extension Interception:**
+    - Khi **Shipper** truy vấn `matchGroup`:
+      - Thao tác đọc đơn lẻ (`findUnique`, `findUniqueOrThrow`): Tự động viết lại (rewrite) thành `findFirst`/`findFirstOrThrow` kèm điều kiện bắt buộc `{ matchGroupShipments: { some: { companyId } } }`. Nếu Shipper A truy vấn nhóm của Shipper B, kết quả trả về `null` $\to$ ứng dụng phản hồi **HTTP 404 Not Found** (hoặc 403), ngăn chặn hoàn toàn tấn công rà quét mã nhóm (ID enumeration).
+      - Thao tác đọc danh sách (`findFirst`, `findMany`, `count`, `aggregate`): Tự động inject filter `matchGroupShipments: { some: { companyId } }`. Shipper chỉ thấy các nhóm có hàng của mình.
+      - Thao tác sửa đổi dữ liệu (`create`, `update`, `delete`, `upsert`): Ném ngay `ForbiddenException` vì Shipper không được phép can thiệp trực tiếp cấu trúc nhóm đóng cont.
+    - Khi **Consolidation Operators** (`PLATFORM_ADMIN`, `ADMIN`, `FWD_ADMIN`, `FWD_OPERATOR`, `CFS_ADMIN`, `CFS_OPERATOR`): Được cấp quyền bypass tự động trên `MatchGroup` và `MatchGroupShipment` để vận hành, điều phối gom hàng liên công ty.
 
 ### 2. Thuật Toán Lựa Chọn Container & Ghép Hàng Greedy Best-Fit Decreasing (BFD)
+
 Hệ thống triển khai thuật toán ghép hàng tối ưu hóa tại `MatchingEngine`:
 1. **Kiểm tra tương thích kích thước từng kiện (Dimensional Feasibility):** Từng kiện hàng trong lô phải có kích thước ba chiều sau khi xoay hợp lệ nhỏ hơn hoặc bằng kích thước cửa và lòng cont ($L \le L_{\text{cont}}, W \le W_{\text{cont}}, H \le H_{\text{cont}}$).
 2. **Lựa chọn vỏ cont phù hợp (Best Container Selection):**
@@ -26,10 +44,11 @@ Hệ thống triển khai thuật toán ghép hàng tối ưu hóa tại `Matchi
    - Nếu tổng thể tích ứng viên $\le 30.5\text{ CBM}$ và tổng khối lượng $\le 28.2\text{ tấn}$: Ưu tiên đề xuất vỏ `20DC`.
    - Nếu tổng thể tích trong khoảng $30.5\text{ CBM} - 62.3\text{ CBM}$ và khối lượng $\le 26.7\text{ tấn}$: Ưu tiên đề xuất vỏ `40DC`.
    - Vượt ngưỡng trên: Đề xuất `40HC`.
-3. **Gom hàng theo Greedy Knapsack:**
+3. **Gom hàng theo Greedy Knapsack với Ngưỡng Trần Sơ Bộ:**
    - Sắp xếp các lô hàng ứng viên trạng thái `SUBMITTED` theo thể tích giảm dần.
+   - Hằng số `MAX_PRELIMINARY_FILL_BPS = 9500` (95.00% dung sai thể tích sơ bộ).
    - Thêm từng lô hàng vào container nếu và chỉ nếu:
-     $$\sum V_i \le \left\lfloor \frac{V_{\text{cont}} \times 9200}{10000} \right\rfloor \quad \text{và} \quad \sum W_i \le W_{\text{payload}}$$
+     $$\sum V_i \le \left\lfloor \frac{V_{\text{cont}} \times 9500}{10000} \right\rfloor \quad \text{và} \quad \sum W_i \le W_{\text{payload}}$$
    - Tính toán tỷ lệ lấp đầy theo đơn vị Basis Points:
      $$\text{volumeFillBps} = \left\lfloor \frac{\sum V_i \times 10000}{V_{\text{cont}}} \right\rfloor, \quad \text{weightFillBps} = \left\lfloor \frac{\sum W_i \times 10000}{W_{\text{payload}}} \right\rfloor$$
 
@@ -50,8 +69,9 @@ Hệ thống bảo đảm tính toàn vẹn trạng thái thông qua Database Tr
 ## Consequences
 
 ### Ưu điểm (Positive)
-- **Tối ưu hóa Chi phí Vận tải:** Forwarder nhanh chóng đạt tỷ lệ lấp đầy mong muốn ($> 80\%$) mà không phải tính toán thủ công từng kiện hàng.
-- **Không Rò Rỉ Dữ Liệu:** Shipper chỉ nhìn thấy kế hoạch đóng cont có hàng của mình, không xem được danh sách đơn hàng của các shipper đối thủ trong các container khác.
+- **Bảo Mật Tự Động Triệt Để:** Bảo vệ đa thuê bao diễn ra tại tầng Prisma Client Extension; lập trình viên không cần nhớ thêm điều kiện `where` thủ công.
+- **Rõ Ràng Nghiệp Vụ:** Phân định rõ giữa trần dung sai 1D ($95\%$) ở Phase 3 và sàn cam kết 3D ($\ge 92\%$) ở Phase 4.
+- **Hiệu Năng Cao:** Thêm chỉ mục `[companyId, matchGroupId]` trên bảng `match_group_shipments` giúp câu lệnh kiểm tra quyền sở hữu diễn ra tức thì qua Index-Only Scan.
 - **Tính Toán Toàn Vẹn Tuyệt Đối:** Không có sai số làm tròn khi hiển thị tỷ lệ lấp đầy hoặc tính toán quá tải trục (axle overload).
 - **Fail-Fast Bootstrap:** Mọi mô hình dữ liệu mới đều được kiểm tra phân loại tự động tại thời điểm khởi động server (`validateAllModelsClassified`).
 

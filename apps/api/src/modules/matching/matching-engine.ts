@@ -41,11 +41,17 @@ export interface ConsolidationPlan {
 }
 
 /**
- * Practical maximum volume packing factor for LCL consolidation (92.00%).
- * Due to non-uniform carton shapes, pallet overhang, and dunnage, 100% volumetric
- * fill is physically impossible without repacking liquids or powders.
+ * Preliminary volumetric ceiling for Phase 3 1D consolidation matching (95.00% = 9500 bps).
+ *
+ * ARCHITECTURAL CLARIFICATION:
+ * - Phase 3 performs 1D greedy preliminary knapsack aggregation based purely on total volume (CBM)
+ *   and gross weight (kg). A ceiling of 95.00% is applied as a preliminary tolerance buffer
+ *   to avoid over-stuffing before 3D spatial feasibility is solved.
+ * - In contrast, the market commitment KPI of >= 92% is a MINIMUM TARGET FLOOR enforced
+ *   in Phase 4 by the 3D Extreme Point packing engine (which calculates exact 3D coordinates (x, y, z),
+ *   center of gravity, load-bearing sequence, and orientation).
  */
-export const PRACTICAL_MAX_VOLUME_FILL_BPS = 9200; // 92.00%
+export const MAX_PRELIMINARY_FILL_BPS = 9500; // 95.00%
 
 export class MatchingEngine {
   /**
@@ -164,7 +170,7 @@ export class MatchingEngine {
       return Number(b.weightGrams - a.weightGrams);
     });
 
-    const maxUsableVolume = (container.volumeMm3 * BigInt(PRACTICAL_MAX_VOLUME_FILL_BPS)) / 10000n;
+    const maxUsableVolume = (container.volumeMm3 * BigInt(MAX_PRELIMINARY_FILL_BPS)) / 10000n;
 
     const selected: CandidateShipment[] = [];
     let currentVolume = 0n;

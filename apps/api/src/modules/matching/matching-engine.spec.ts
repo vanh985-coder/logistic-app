@@ -1,4 +1,9 @@
-import { MatchingEngine, CandidateShipment, ContainerSpec } from './matching-engine';
+import {
+  MatchingEngine,
+  CandidateShipment,
+  ContainerSpec,
+  MAX_PRELIMINARY_FILL_BPS,
+} from './matching-engine';
 
 describe('MatchingEngine', () => {
   const container20DC: ContainerSpec = {
@@ -155,7 +160,7 @@ describe('MatchingEngine', () => {
     // Or sExceed + s1 (35 CBM > 33.2)
     // So plan selects sExceed (20 CBM) alone or s1 (15 CBM) + s2 (12 CBM) = 27 CBM <= 30.5 CBM
     expect(plan!.totalVolumeMm3).toBeLessThanOrEqual(
-      (container20DC.volumeMm3 * 9200n) / 10000n,
+      (container20DC.volumeMm3 * BigInt(MAX_PRELIMINARY_FILL_BPS)) / 10000n,
     );
     expect(plan!.totalWeightGrams).toBeLessThanOrEqual(container20DC.maxPayloadGram);
     expect(plan!.volumeFillBps).toBeGreaterThan(0);

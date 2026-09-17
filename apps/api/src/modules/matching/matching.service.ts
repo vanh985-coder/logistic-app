@@ -133,6 +133,7 @@ export class MatchingService {
           for (const s of plan.shipments) {
             await tx.matchGroupShipment.create({
               data: {
+                companyId: s.companyId,
                 matchGroupId: mg.id,
                 shipmentId: s.id,
               },
@@ -240,6 +241,7 @@ export class MatchingService {
       for (const s of shipments) {
         await tx.matchGroupShipment.create({
           data: {
+            companyId: s.companyId,
             matchGroupId: mg.id,
             shipmentId: s.id,
           },
@@ -349,9 +351,7 @@ export class MatchingService {
     ) {
       where.matchGroupShipments = {
         some: {
-          shipment: {
-            companyId: user.companyId,
-          },
+          companyId: user.companyId,
         },
       };
     }
@@ -431,7 +431,7 @@ export class MatchingService {
       (user.role === UserRole.SHIPPER_ADMIN || user.role === UserRole.SHIPPER_MEMBER)
     ) {
       const hasAccess = group.matchGroupShipments.some(
-        (m: any) => m.shipment.companyId === user.companyId,
+        (m: any) => m.companyId === user.companyId || m.shipment?.companyId === user.companyId,
       );
       if (!hasAccess) {
         throw new ForbiddenException('You do not have permission to view this consolidation group');

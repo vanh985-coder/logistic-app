@@ -1,10 +1,11 @@
-import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
+import { Injectable, OnModuleInit, OnModuleDestroy, Logger, ForbiddenException } from '@nestjs/common';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { TenantContextService } from '../../common/tenant/tenant-context.service';
 import { TenantContextMissingException } from '../../common/tenant/tenant-context-missing.exception';
 import {
   TENANT_MODELS,
   TENANT_SELF_MODELS,
+  TENANT_RELATION_MODELS,
   GLOBAL_MODELS,
   validateAllModelsClassified,
 } from '../../common/tenant/tenant-models.config';
@@ -43,10 +44,27 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
               return query(args);
             }
 
+            // 2b. Consolidation operators (FWD, CFS, ADMIN) bypass for cross-tenant consolidation models
+            const isConsolidationManager = [
+              'ADMIN',
+              'FWD_ADMIN',
+              'FWD_OPERATOR',
+              'CFS_ADMIN',
+              'CFS_OPERATOR',
+            ].includes(context?.role as string);
+
+            if (
+              isConsolidationManager &&
+              (model === 'MatchGroup' || model === 'MatchGroupShipment')
+            ) {
+              return query(args);
+            }
+
             // 3. Check for Zero-Context Access on Tenant Scoped Models
             if (
               (TENANT_MODELS as readonly string[]).includes(model) ||
-              (TENANT_SELF_MODELS as readonly string[]).includes(model)
+              (TENANT_SELF_MODELS as readonly string[]).includes(model) ||
+              (TENANT_RELATION_MODELS as readonly string[]).includes(model)
             ) {
               if (!context?.companyId) {
                 throw new TenantContextMissingException(model);
@@ -188,6 +206,78 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
               if (['updateMany', 'deleteMany'].includes(operation)) {
                 args.where = { ...args.where, id: companyId };
                 return query(args);
+              }
+            }
+
+            // 6. Handle TENANT_RELATION_MODELS (e.g. MatchGroup)
+            if ((TENANT_RELATION_MODELS as readonly string[]).includes(model)) {
+              if (model === 'MatchGroup') {
+                const relationFilter = {
+                  matchGroupShipments: {
+                    some: {
+                      companyId,
+                    },
+                  },
+                };
+
+                if (operation === 'findUnique') {
+                  return (base as any)[modelKey].findFirst({
+                    ...args,
+                    where: {
+                      ...args.where,
+                      ...relationFilter,
+                    },
+                  });
+                }
+
+                if (operation === 'findUniqueOrThrow') {
+                  return (base as any)[modelKey].findFirstOrThrow({
+                    ...args,
+                    where: {
+                      ...args.where,
+                      ...relationFilter,
+                    },
+                  });
+                }
+
+                if (
+                  [
+                    'findFirst',
+                    'findFirstOrThrow',
+                    'findMany',
+                    'count',
+                    'aggregate',
+                    'groupBy',
+                  ].includes(operation)
+                ) {
+                  if (args.where?.matchGroupShipments) {
+                    args.where = {
+                      AND: [args.where, relationFilter],
+                    };
+                  } else {
+                    args.where = {
+                      ...args.where,
+                      ...relationFilter,
+                    };
+                  }
+                  return query(args);
+                }
+
+                if (
+                  [
+                    'create',
+                    'createMany',
+                    'update',
+                    'updateMany',
+                    'delete',
+                    'deleteMany',
+                    'upsert',
+                  ].includes(operation)
+                ) {
+                  throw new ForbiddenException(
+                    `Direct modification of ${model} is restricted to authorized consolidation operators.`,
+                  );
+                }
               }
             }
 

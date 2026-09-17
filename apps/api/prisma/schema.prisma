@@ -58,6 +58,7 @@ model Company {
   users              User[]
   shipments          Shipment[]
   packages           Package[]
+  matchGroupShipments MatchGroupShipment[]
 
   @@index([status, createdAt(sort: Desc)])
   @@map("companies")
@@ -270,6 +271,8 @@ model MatchGroup {
 
 model MatchGroupShipment {
   id           String     @id @default(uuid())
+  companyId    String
+  company      Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
   matchGroupId String
   matchGroup   MatchGroup @relation(fields: [matchGroupId], references: [id], onDelete: Cascade)
   shipmentId   String
@@ -277,6 +280,7 @@ model MatchGroupShipment {
   joinedAt     DateTime   @default(now())
 
   @@unique([matchGroupId, shipmentId])
+  @@index([companyId, matchGroupId])
   @@index([matchGroupId])
   @@index([shipmentId])
   @@map("match_group_shipments")
