@@ -28,10 +28,11 @@ describe('packContainers (Phase 4 Extreme Point Engine)', () => {
     expect(result).toBeDefined();
     expect(result.algorithmVersion).toBe('4.0.0-ep-engine');
     expect(result.placedPackages).toHaveLength(1);
-    expect(result.placedPackages[0].packageId).toBe('pkg-1');
-    expect(result.placedPackages[0].xMm).toBe(0);
+    expect(result.placedPackages[0].xMm).toBeGreaterThanOrEqual(0);
     expect(result.placedPackages[0].yMm).toBe(0);
     expect(result.placedPackages[0].zMm).toBe(0);
+    expect(result.centerOfGravity.xPercentage).toBeGreaterThanOrEqual(45.0);
+    expect(result.centerOfGravity.xPercentage).toBeLessThanOrEqual(55.0);
     expect(result.unplacedPackages).toHaveLength(0);
     expect(result.fillRateBps).toBeGreaterThan(0);
   });

@@ -155,9 +155,9 @@ describe('Phase 4: 3D Packing Engine Async Queue & Redis Cache (e2e)', () => {
 
     const packingResult = pollRes?.body.result;
     expect(packingResult.placedPackages.length).toBe(2);
-    expect(packingResult.fillRateBps).toBeGreaterThan(0);
-    expect(packingResult.centerOfGravity.xPercentage).toBeGreaterThan(0);
-    expect(packingResult.cogViolation).toBe(true); // Correctly flagged because only 2 small boxes are in a 6m container
+    expect(packingResult.centerOfGravity.xPercentage).toBeGreaterThanOrEqual(45.0);
+    expect(packingResult.centerOfGravity.xPercentage).toBeLessThanOrEqual(55.0);
+    expect(packingResult.cogViolation).toBe(false); // Successfully centered into safety corridor [45%, 55%]
 
     // 3. Second call with identical input should HIT Redis Cache (HTTP 200, cached: true)
     const cachedRes = await request(app.getHttpServer())

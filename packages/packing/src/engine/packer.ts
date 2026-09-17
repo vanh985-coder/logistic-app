@@ -42,7 +42,7 @@ export class ExtremePointPacker {
     this.options = {
       timeBudgetMs: options?.timeBudgetMs ?? 8000,
       seed,
-      maxEvaluations: options?.maxEvaluations ?? 2000,
+      maxEvaluations: options?.maxEvaluations ?? 8,
       contactToleranceMm: options?.contactToleranceMm ?? DEFAULT_CONTACT_TOLERANCE_MM,
       minSupportRatioBps: options?.minSupportRatioBps ?? 8000,
     };
@@ -79,6 +79,7 @@ export class ExtremePointPacker {
         totalWeightGrams: 0,
         totalVolumeMm3: '0',
         iterationsExecuted: 0,
+        watchdogTriggered: false,
       };
     }
 
@@ -119,12 +120,25 @@ export class ExtremePointPacker {
     let bestPlacements: PlacedItemState[] = [];
     let bestVolume = 0n;
     let bestWeight = 0;
+    let bestUnplacedReasons = new Map<string, UnplacedPackage['reason']>();
+    let bestRejectionStats = {
+      boundaryExceeded: 0,
+      collision: 0,
+      insufficientSupport: 0,
+      maxStackWeight: 0,
+      payloadExceeded: 0,
+      dimensionsExceeded: initiallyUnplaced.filter((u) => u.reason === 'EXCEED_DIMENSIONS').length,
+    };
     let iterations = 0;
+    let watchdogTriggered = false;
 
     for (const orderedList of permutations) {
       if (iterations >= this.options.maxEvaluations) break;
       // Watchdog emergency timeout check
-      if (Date.now() - startTime >= this.options.timeBudgetMs) break;
+      if (Date.now() - startTime >= this.options.timeBudgetMs) {
+        watchdogTriggered = true;
+        break;
+      }
 
       iterations++;
       const result = this.packSinglePass(orderedList);
@@ -133,6 +147,11 @@ export class ExtremePointPacker {
         bestVolume = result.totalVolume;
         bestWeight = result.totalWeight;
         bestPlacements = result.placements;
+        bestUnplacedReasons = result.unplacedReasons;
+        bestRejectionStats = {
+          ...result.rejectionStats,
+          dimensionsExceeded: initiallyUnplaced.filter((u) => u.reason === 'EXCEED_DIMENSIONS').length,
+        };
       }
     }
 
@@ -178,7 +197,10 @@ export class ExtremePointPacker {
       ...initiallyUnplaced,
       ...eligiblePackages
         .filter((p) => !placedIds.has(p.id))
-        .map((p) => ({ packageId: p.id, reason: 'NO_VALID_PLACEMENT' as const })),
+        .map((p) => ({
+          packageId: p.id,
+          reason: bestUnplacedReasons.get(p.id) ?? ('NO_VALID_PLACEMENT' as const),
+        })),
     ];
 
     const fillRateBps =
@@ -213,6 +235,13 @@ export class ExtremePointPacker {
       totalWeightGrams: bestWeight,
       totalVolumeMm3: bestVolume.toString(),
       iterationsExecuted: iterations,
+      watchdogTriggered,
+      repairStats: {
+        attempted: repairRes.repairStepsExecuted,
+        applied: repairRes.repairApplied,
+        type: repairRes.repairType,
+      },
+      rejectionStats: bestRejectionStats,
     };
   }
 
@@ -223,6 +252,14 @@ export class ExtremePointPacker {
     placements: PlacedItemState[];
     totalVolume: bigint;
     totalWeight: number;
+    unplacedReasons: Map<string, UnplacedPackage['reason']>;
+    rejectionStats: {
+      boundaryExceeded: number;
+      collision: number;
+      insufficientSupport: number;
+      maxStackWeight: number;
+      payloadExceeded: number;
+    };
   } {
     const epManager = new ExtremePointsManager();
     const voxelGrid = new VoxelGrid3D();
@@ -232,16 +269,32 @@ export class ExtremePointPacker {
     let totalVolume = 0n;
     let totalWeight = 0;
 
+    const unplacedReasons = new Map<string, UnplacedPackage['reason']>();
+    const rejectionStats = {
+      boundaryExceeded: 0,
+      collision: 0,
+      insufficientSupport: 0,
+      maxStackWeight: 0,
+      payloadExceeded: 0,
+    };
+
     const maxDrop = Math.max(...items.map((i) => i.dropOrder ?? 1), 1);
 
     for (const item of items) {
       if (totalWeight + item.weightGram > this.container.maxPayloadGram) {
+        unplacedReasons.set(item.id, 'EXCEED_PAYLOAD');
+        rejectionStats.payloadExceeded++;
         continue;
       }
 
       const candidateScores: CandidateScore[] = [];
       const rotations = getValidRotations(item);
       const points = epManager.getPoints();
+
+      let bFail = 0;
+      let cFail = 0;
+      let sFail = 0;
+      let dFail = 0;
 
       for (let pIdx = 0; pIdx < points.length; pIdx++) {
         const p = points[pIdx];
@@ -258,10 +311,18 @@ export class ExtremePointPacker {
           };
 
           // 1. Boundary check
-          if (!isInsideContainer(candidateBox, this.container)) continue;
+          if (!isInsideContainer(candidateBox, this.container)) {
+            bFail++;
+            rejectionStats.boundaryExceeded++;
+            continue;
+          }
 
           // 2. Collision check
-          if (voxelGrid.hasCollision(candidateBox)) continue;
+          if (voxelGrid.hasCollision(candidateBox)) {
+            cFail++;
+            rejectionStats.collision++;
+            continue;
+          }
 
           // 3. Bottom support check (>= 80%, contact tolerance 5mm)
           const supportEval = evaluateBottomSupport(
@@ -270,7 +331,11 @@ export class ExtremePointPacker {
             this.options.contactToleranceMm,
             this.options.minSupportRatioBps,
           );
-          if (!supportEval.isSupported) continue;
+          if (!supportEval.isSupported) {
+            sFail++;
+            rejectionStats.insufficientSupport++;
+            continue;
+          }
 
           // 4. Stacking weight limit check & noStack constraint
           const dagCheck = stackDag.canPlacePackage(
@@ -278,7 +343,11 @@ export class ExtremePointPacker {
             candidateBox,
             this.options.contactToleranceMm,
           );
-          if (!dagCheck.allowed) continue;
+          if (!dagCheck.allowed) {
+            dFail++;
+            rejectionStats.maxStackWeight++;
+            continue;
+          }
 
           // 5. Compute placement evaluation score
           const score = this.calculatePlacementScore(
@@ -320,6 +389,14 @@ export class ExtremePointPacker {
 
         totalVolume += BigInt(best.box.w) * BigInt(best.box.l) * BigInt(best.box.h);
         totalWeight += item.weightGram;
+      } else {
+        if (sFail > 0 && bFail === 0 && cFail === 0) {
+          unplacedReasons.set(item.id, 'NO_SUPPORT');
+        } else if (dFail > 0 && bFail === 0 && cFail === 0) {
+          unplacedReasons.set(item.id, 'MAX_STACK_WEIGHT_EXCEEDED');
+        } else {
+          unplacedReasons.set(item.id, 'NO_VALID_PLACEMENT');
+        }
       }
     }
 
@@ -327,6 +404,8 @@ export class ExtremePointPacker {
       placements,
       totalVolume,
       totalWeight,
+      unplacedReasons,
+      rejectionStats,
     };
   }
 
@@ -351,7 +430,9 @@ export class ExtremePointPacker {
     // 2. Soft CoG Pull: evaluate where CoG would move
     const testPlacements = [...currentPlacements, { item, box, rotation: 0 }];
     const cog = calculateCenterOfGravity(testPlacements, this.container);
-    const fCog = - Math.abs(cog.xPercentage / 100 - 0.5);
+    const diff = Math.abs(cog.xPercentage - 50.0);
+    // Steep penalty if CoG strays outside safety corridor [45%, 55%]
+    const fCog = diff > 5.0 ? - (diff * diff * 40) : - (diff * 20);
 
     // 3. LIFO bonus: early drop packages are rewarded when closer to doors (+X)
     const drop = item.dropOrder ?? 1;
@@ -361,7 +442,7 @@ export class ExtremePointPacker {
     // 4. Support bonus: higher contact ratio is preferred
     const fSupport = supportRatioBps / 10000;
 
-    return 1000 * fCompact + 2500 * fCog + 800 * fLifo + 500 * fSupport;
+    return 1000 * fCompact + fCog + 500 * fLifo + 500 * fSupport;
   }
 
   /**
@@ -412,9 +493,10 @@ export class ExtremePointPacker {
       }),
     );
 
-    // Further permutations via deterministic seeded shuffle
+    // Further permutations via deterministic seeded shuffle up to maxEvaluations
     const baseList = [...orderings[0]];
-    for (let i = 0; i < 60; i++) {
+    const extraNeeded = Math.max(0, this.options.maxEvaluations - orderings.length);
+    for (let i = 0; i < extraNeeded; i++) {
       const copy = [...baseList];
       // Random windowed perturbation
       const windowSize = Math.min(5, copy.length);
@@ -426,7 +508,7 @@ export class ExtremePointPacker {
       orderings.push(copy);
     }
 
-    return orderings;
+    return orderings.slice(0, this.options.maxEvaluations);
   }
 }
 

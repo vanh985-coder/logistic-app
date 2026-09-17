@@ -1,0 +1,92 @@
+[
+  {
+    "strategy": "A_MANUAL",
+    "scenario": "1. Hàng đồng nhất (120 thùng 600x400x400)",
+    "container1FillRatePct": 15.08,
+    "container1PlacedCount": 120,
+    "totalPackages": 120,
+    "containersNeeded": 1,
+    "container1CogX": 43.22,
+    "totalTimeMs": 63.96
+  },
+  {
+    "strategy": "B_EXPERIENCED",
+    "scenario": "1. Hàng đồng nhất (120 thùng 600x400x400)",
+    "container1FillRatePct": 15.08,
+    "container1PlacedCount": 120,
+    "totalPackages": 120,
+    "containersNeeded": 1,
+    "container1CogX": 43.22,
+    "totalTimeMs": 51.81
+  },
+  {
+    "strategy": "C_EXTREME_POINT",
+    "scenario": "1. Hàng đồng nhất (120 thùng 600x400x400)",
+    "container1FillRatePct": 15.08,
+    "container1PlacedCount": 120,
+    "totalPackages": 120,
+    "containersNeeded": 1,
+    "container1CogX": 45,
+    "totalTimeMs": 2387.78
+  },
+  {
+    "strategy": "A_MANUAL",
+    "scenario": "2. Hàng hỗn hợp (150 kiện ngẫu nhiên 300-1200mm)",
+    "container1FillRatePct": 56.98,
+    "container1PlacedCount": 114,
+    "totalPackages": 150,
+    "containersNeeded": 2,
+    "container1CogX": 50.42,
+    "totalTimeMs": 79.33
+  },
+  {
+    "strategy": "B_EXPERIENCED",
+    "scenario": "2. Hàng hỗn hợp (150 kiện ngẫu nhiên 300-1200mm)",
+    "container1FillRatePct": 66.5,
+    "container1PlacedCount": 101,
+    "totalPackages": 150,
+    "containersNeeded": 2,
+    "container1CogX": 47.92,
+    "totalTimeMs": 73.28
+  },
+  {
+    "strategy": "C_EXTREME_POINT",
+    "scenario": "2. Hàng hỗn hợp (150 kiện ngẫu nhiên 300-1200mm)",
+    "container1FillRatePct": 69.13,
+    "container1PlacedCount": 97,
+    "totalPackages": 150,
+    "containersNeeded": 2,
+    "container1CogX": 51.38,
+    "totalTimeMs": 1998.81
+  },
+  {
+    "strategy": "A_MANUAL",
+    "scenario": "3. Hàng khó (80 kiện, tỷ lệ cạnh > 5, 30% noStack)",
+    "container1FillRatePct": 10.18,
+    "container1PlacedCount": 45,
+    "totalPackages": 80,
+    "containersNeeded": 2,
+    "container1CogX": 56.09,
+    "totalTimeMs": 13.36
+  },
+  {
+    "strategy": "B_EXPERIENCED",
+    "scenario": "3. Hàng khó (80 kiện, tỷ lệ cạnh > 5, 30% noStack)",
+    "container1FillRatePct": 23.77,
+    "container1PlacedCount": 40,
+    "totalPackages": 80,
+    "containersNeeded": 2,
+    "container1CogX": 45.84,
+    "totalTimeMs": 20.11
+  },
+  {
+    "strategy": "C_EXTREME_POINT",
+    "scenario": "3. Hàng khó (80 kiện, tỷ lệ cạnh > 5, 30% noStack)",
+    "container1FillRatePct": 31.43,
+    "container1PlacedCount": 80,
+    "totalPackages": 80,
+    "containersNeeded": 1,
+    "container1CogX": 42.74,
+    "totalTimeMs": 1304.57
+  }
+]

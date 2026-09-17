@@ -55,7 +55,7 @@ export interface CenterOfGravity {
 export interface PackingOptions {
   timeBudgetMs?: number; // Watchdog timeout in ms (default 8000)
   seed?: number; // Deterministic seed (if not provided, computed from input fingerprint)
-  maxEvaluations?: number; // Fixed iteration budget (default 2000)
+  maxEvaluations?: number; // Fixed iteration budget (default 8)
   contactToleranceMm?: number; // Contact tolerance for bottom support (default 5 mm)
   minSupportRatioBps?: number; // Minimum bottom support in bps (default 8000 = 80.00%)
 }
@@ -72,4 +72,19 @@ export interface PackingResult {
   totalWeightGrams: number;
   totalVolumeMm3: string;
   iterationsExecuted: number;
+  watchdogTriggered: boolean;
+  repairStats?: {
+    attempted: number;
+    applied: boolean;
+    type?: string;
+  };
+  rejectionStats?: {
+    boundaryExceeded: number;
+    collision: number;
+    insufficientSupport: number;
+    maxStackWeight: number;
+    payloadExceeded: number;
+    dimensionsExceeded: number;
+  };
 }
+

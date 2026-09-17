@@ -44,7 +44,7 @@ describe('Benchmark (50, 200, 500 packages)', () => {
     const startMem = process.memoryUsage().heapUsed;
     const start = performance.now();
 
-    const res = packContainers(container40HC, pkgs50, { maxEvaluations: 60 });
+    const res = packContainers(container40HC, pkgs50);
 
     const elapsed = performance.now() - start;
     const memMb = (process.memoryUsage().heapUsed - startMem) / (1024 * 1024);
@@ -53,7 +53,10 @@ describe('Benchmark (50, 200, 500 packages)', () => {
     console.log(`Execution Time: ${elapsed.toFixed(2)} ms`);
     console.log(`Placed: ${res.placedPackages.length}/${pkgs50.length}`);
     console.log(`Fill Rate: ${(res.fillRateBps / 100).toFixed(2)}%`);
-    console.log(`CoG X: ${res.centerOfGravity.xPercentage}%`);
+    console.log(`CoG X: ${res.centerOfGravity.xPercentage}% (violation: ${res.cogViolation})`);
+    console.log(`Iterations Executed: ${res.iterationsExecuted}`);
+    console.log(`Watchdog Triggered: ${res.watchdogTriggered}`);
+    console.log(`CoG Repair:`, JSON.stringify(res.repairStats));
     console.log(`Memory Delta: ${memMb.toFixed(2)} MB`);
     console.log('==============================');
   }, 20000);
@@ -63,7 +66,7 @@ describe('Benchmark (50, 200, 500 packages)', () => {
     const startMem = process.memoryUsage().heapUsed;
     const start = performance.now();
 
-    const res = packContainers(container40HC, pkgs200, { maxEvaluations: 30 });
+    const res = packContainers(container40HC, pkgs200);
 
     const elapsed = performance.now() - start;
     const memMb = (process.memoryUsage().heapUsed - startMem) / (1024 * 1024);
@@ -72,7 +75,10 @@ describe('Benchmark (50, 200, 500 packages)', () => {
     console.log(`Execution Time: ${elapsed.toFixed(2)} ms`);
     console.log(`Placed: ${res.placedPackages.length}/${pkgs200.length}`);
     console.log(`Fill Rate: ${(res.fillRateBps / 100).toFixed(2)}%`);
-    console.log(`CoG X: ${res.centerOfGravity.xPercentage}%`);
+    console.log(`CoG X: ${res.centerOfGravity.xPercentage}% (violation: ${res.cogViolation})`);
+    console.log(`Iterations Executed: ${res.iterationsExecuted}`);
+    console.log(`Watchdog Triggered: ${res.watchdogTriggered}`);
+    console.log(`CoG Repair:`, JSON.stringify(res.repairStats));
     console.log(`Memory Delta: ${memMb.toFixed(2)} MB`);
     console.log('==============================');
   }, 20000);
@@ -82,7 +88,7 @@ describe('Benchmark (50, 200, 500 packages)', () => {
     const startMem = process.memoryUsage().heapUsed;
     const start = performance.now();
 
-    const res = packContainers(container40HC, pkgs500, { maxEvaluations: 20 });
+    const res = packContainers(container40HC, pkgs500);
 
     const elapsed = performance.now() - start;
     const memMb = (process.memoryUsage().heapUsed - startMem) / (1024 * 1024);
@@ -91,7 +97,11 @@ describe('Benchmark (50, 200, 500 packages)', () => {
     console.log(`Execution Time: ${elapsed.toFixed(2)} ms`);
     console.log(`Placed: ${res.placedPackages.length}/${pkgs500.length}`);
     console.log(`Fill Rate: ${(res.fillRateBps / 100).toFixed(2)}%`);
-    console.log(`CoG X: ${res.centerOfGravity.xPercentage}%`);
+    console.log(`CoG X: ${res.centerOfGravity.xPercentage}% (violation: ${res.cogViolation})`);
+    console.log(`Iterations Executed: ${res.iterationsExecuted}`);
+    console.log(`Watchdog Triggered: ${res.watchdogTriggered}`);
+    console.log(`CoG Repair:`, JSON.stringify(res.repairStats));
+    console.log(`Rejection Stats:`, JSON.stringify(res.rejectionStats));
     console.log(`Memory Delta: ${memMb.toFixed(2)} MB`);
     console.log('==============================');
   }, 20000);

@@ -67,30 +67,137 @@ export function calculateCenterOfGravity(
  * performs targeted longitudinal adjustments (swaps/shifts of heavy packages)
  * to bring CoG into the target safety corridor.
  */
+export interface CoGRepairResult {
+  success: boolean;
+  cog: CenterOfGravity;
+  repairStepsExecuted: number;
+  repairApplied: boolean;
+  repairType?: 'BLOCK_LONGITUDINAL_SHIFT' | 'PACKAGE_SHIFT' | 'SWAP' | 'NONE';
+}
+
+/**
+ * CoG Repair Step:
+ * If the final CoG is outside the maritime CTU standard [45.0%, 55.0%],
+ * performs targeted longitudinal adjustments:
+ * 1. Block Longitudinal Shift: If there is free longitudinal slack, shifts the entire cargo group along X to center it.
+ * 2. Targeted Swaps: Swaps pairs of heavy/light packages across the longitudinal midpoint.
+ * 3. Individual Package Shifts: Slides unblocked packages along X towards target center.
+ */
 export function repairCenterOfGravity(
   placements: PlacedItemState[],
   container: ContainerDimension,
   canPlaceCheck: (testPlacements: PlacedItemState[]) => boolean,
   maxAttempts = 50,
-): { success: boolean; cog: CenterOfGravity } {
+): CoGRepairResult {
   let currentCog = calculateCenterOfGravity(placements, container);
 
   if (currentCog.xPercentage >= 45.0 && currentCog.xPercentage <= 55.0) {
-    return { success: true, cog: currentCog };
+    return {
+      success: true,
+      cog: currentCog,
+      repairStepsExecuted: 0,
+      repairApplied: false,
+      repairType: 'NONE',
+    };
   }
 
-  // Attempt targeted swaps between packages on the heavier side and lighter side
+  if (placements.length === 0) {
+    return {
+      success: true,
+      cog: currentCog,
+      repairStepsExecuted: 0,
+      repairApplied: false,
+      repairType: 'NONE',
+    };
+  }
+
+  let stepsExecuted = 0;
+
+  // -------------------------------------------------------------
+  // TIER 2A: Block Longitudinal Shift
+  // If the entire cargo block has room to slide along X, shift it
+  // directly toward the 50.0% midpoint.
+  // -------------------------------------------------------------
+  const targetMidX = Math.round(container.innerLengthMm / 2);
+  const deltaX = targetMidX - currentCog.xMm;
+
+  if (deltaX !== 0) {
+    stepsExecuted++;
+    if (deltaX > 0) {
+      // Mass is too close to front (x=0, CoG < 45%). Need to shift towards doors (+X).
+      const maxX = Math.max(...placements.map((p) => p.box.x + p.box.w));
+      const slackX = container.innerLengthMm - maxX;
+      if (slackX > 0) {
+        const shift = Math.min(deltaX, slackX);
+        if (shift > 0) {
+          for (const p of placements) p.box.x += shift;
+          if (canPlaceCheck(placements)) {
+            currentCog = calculateCenterOfGravity(placements, container);
+            if (currentCog.xPercentage >= 45.0 && currentCog.xPercentage <= 55.0) {
+              return {
+                success: true,
+                cog: currentCog,
+                repairStepsExecuted: stepsExecuted,
+                repairApplied: true,
+                repairType: 'BLOCK_LONGITUDINAL_SHIFT',
+              };
+            }
+          } else {
+            // Revert if invalid
+            for (const p of placements) p.box.x -= shift;
+          }
+        }
+      }
+    } else {
+      // Mass is too close to doors (CoG > 55%). Need to shift towards front (-X).
+      const minX = Math.min(...placements.map((p) => p.box.x));
+      if (minX > 0) {
+        const shift = Math.min(Math.abs(deltaX), minX);
+        if (shift > 0) {
+          for (const p of placements) p.box.x -= shift;
+          if (canPlaceCheck(placements)) {
+            currentCog = calculateCenterOfGravity(placements, container);
+            if (currentCog.xPercentage >= 45.0 && currentCog.xPercentage <= 55.0) {
+              return {
+                success: true,
+                cog: currentCog,
+                repairStepsExecuted: stepsExecuted,
+                repairApplied: true,
+                repairType: 'BLOCK_LONGITUDINAL_SHIFT',
+              };
+            }
+          } else {
+            // Revert if invalid
+            for (const p of placements) p.box.x += shift;
+          }
+        }
+      }
+    }
+  }
+
+  // -------------------------------------------------------------
+  // TIER 2B: Targeted Swaps
+  // Swaps pairs of heavy/light packages with matching dimensions
+  // across the midpoint.
+  // -------------------------------------------------------------
   const midX = container.innerLengthMm / 2;
+  let swapApplied = false;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    stepsExecuted++;
     const needShiftRight = currentCog.xPercentage < 45.0; // mass too far back (low X)
     const needShiftLeft = currentCog.xPercentage > 55.0; // mass too far forward (high X)
 
     if (!needShiftRight && !needShiftLeft) {
-      return { success: true, cog: currentCog };
+      return {
+        success: true,
+        cog: currentCog,
+        repairStepsExecuted: stepsExecuted,
+        repairApplied: swapApplied,
+        repairType: swapApplied ? 'SWAP' : 'NONE',
+      };
     }
 
-    // Find candidates for swapping
     let bestSwap: [number, number] | null = null;
     let bestImprovement = 0;
 
@@ -99,23 +206,19 @@ export function repairCenterOfGravity(
         const p1 = placements[i];
         const p2 = placements[j];
 
-        // Check if swapping would help longitudinal balance
         const p1IsLeft = p1.box.x + p1.box.w / 2 < midX;
         const p2IsLeft = p2.box.x + p2.box.w / 2 < midX;
 
-        if (p1IsLeft === p2IsLeft) continue; // Same side doesn't change longitudinal balance
+        if (p1IsLeft === p2IsLeft) continue;
 
         const left = p1IsLeft ? p1 : p2;
         const right = p1IsLeft ? p2 : p1;
         const leftIdx = p1IsLeft ? i : j;
         const rightIdx = p1IsLeft ? j : i;
 
-        // If we need shift right (+X), left package should be heavier than right
         if (needShiftRight && left.item.weightGram <= right.item.weightGram) continue;
-        // If we need shift left (-X), right package should be heavier than left
         if (needShiftLeft && right.item.weightGram <= left.item.weightGram) continue;
 
-        // Check dimensional compatibility: identical or very close dimensions
         const dimMatch =
           Math.abs(left.box.w - right.box.w) <= 10 &&
           Math.abs(left.box.l - right.box.l) <= 10 &&
@@ -124,7 +227,6 @@ export function repairCenterOfGravity(
         if (dimMatch) {
           const deltaWeight = Math.abs(left.item.weightGram - right.item.weightGram);
           if (deltaWeight > bestImprovement) {
-            // Test swap validity
             const originalLeftBox = { ...left.box };
             const originalRightBox = { ...right.box };
 
@@ -138,7 +240,6 @@ export function repairCenterOfGravity(
 
             const isValid = canPlaceCheck(placements);
 
-            // Revert for now
             left.box = originalLeftBox;
             right.box = originalRightBox;
 
@@ -151,9 +252,8 @@ export function repairCenterOfGravity(
       }
     }
 
-    if (!bestSwap) break; // No more beneficial valid swaps found
+    if (!bestSwap) break;
 
-    // Execute best swap
     const [idx1, idx2] = bestSwap;
     const b1 = { ...placements[idx1].box };
     const b2 = { ...placements[idx2].box };
@@ -166,14 +266,76 @@ export function repairCenterOfGravity(
     placements[idx2].box.y = b1.y;
     placements[idx2].box.z = b1.z;
 
+    swapApplied = true;
     currentCog = calculateCenterOfGravity(placements, container);
     if (currentCog.xPercentage >= 45.0 && currentCog.xPercentage <= 55.0) {
-      return { success: true, cog: currentCog };
+      return {
+        success: true,
+        cog: currentCog,
+        repairStepsExecuted: stepsExecuted,
+        repairApplied: true,
+        repairType: 'SWAP',
+      };
     }
   }
 
+  // -------------------------------------------------------------
+  // TIER 2C: Individual Package Shifts
+  // If CoG is still out of range, slide individual unblocked packages
+  // along X into open spaces towards the center.
+  // -------------------------------------------------------------
+  let shiftApplied = false;
+  if (currentCog.xPercentage < 45.0 || currentCog.xPercentage > 55.0) {
+    const needShiftRight = currentCog.xPercentage < 45.0;
+
+    // Sort candidate packages to shift: heaviest first
+    const candidates = [...placements]
+      .filter((p) => (needShiftRight ? p.box.x + p.box.w / 2 < midX : p.box.x + p.box.w / 2 > midX))
+      .sort((a, b) => b.item.weightGram - a.item.weightGram);
+
+    for (const p of candidates) {
+      if (currentCog.xPercentage >= 45.0 && currentCog.xPercentage <= 55.0) break;
+      stepsExecuted++;
+
+      const origX = p.box.x;
+      const stepDirection = needShiftRight ? 1 : -1;
+      const stepSizes = [6000, 5000, 4000, 3000, 2000, 1500, 1000, 500, 250, 100];
+
+      for (const step of stepSizes) {
+        const testX = origX + stepDirection * step;
+        if (testX < 0 || testX + p.box.w > container.innerLengthMm) continue;
+
+        p.box.x = testX;
+        if (canPlaceCheck(placements)) {
+          const newCog = calculateCenterOfGravity(placements, container);
+          if (Math.abs(newCog.xPercentage - 50.0) < Math.abs(currentCog.xPercentage - 50.0)) {
+            currentCog = newCog;
+            shiftApplied = true;
+            break; // keep this shift
+          }
+        }
+        p.box.x = origX; // revert
+      }
+    }
+
+    if (shiftApplied && currentCog.xPercentage >= 45.0 && currentCog.xPercentage <= 55.0) {
+      return {
+        success: true,
+        cog: currentCog,
+        repairStepsExecuted: stepsExecuted,
+        repairApplied: true,
+        repairType: 'PACKAGE_SHIFT',
+      };
+    }
+  }
+
+  const anyApplied = swapApplied || shiftApplied;
   return {
     success: currentCog.xPercentage >= 45.0 && currentCog.xPercentage <= 55.0,
     cog: currentCog,
+    repairStepsExecuted: stepsExecuted,
+    repairApplied: anyApplied,
+    repairType: swapApplied ? 'SWAP' : shiftApplied ? 'PACKAGE_SHIFT' : 'NONE',
   };
 }
+
