@@ -43,19 +43,31 @@ export class ExtremePointsManager {
     candidatePoints.push({ x: newBox.x, y: newBox.y + newBox.l, z: newBox.z });
     candidatePoints.push({ x: newBox.x, y: newBox.y, z: newBox.z + newBox.h });
 
-    // 2. Projected points against existing boxes
+    // 2. Additional corners of newBox on upper plane
+    candidatePoints.push({ x: newBox.x + newBox.w, y: newBox.y, z: newBox.z + newBox.h });
+    candidatePoints.push({ x: newBox.x, y: newBox.y + newBox.l, z: newBox.z + newBox.h });
+
+    // 3. Projected points against existing boxes in 3D
     for (const b of allBoxes) {
       // Projection along X
       if (b.x + b.w <= newBox.x + newBox.w && b.y < newBox.y + newBox.l && b.y + b.l > newBox.y) {
         candidatePoints.push({ x: newBox.x + newBox.w, y: b.y + b.l, z: newBox.z });
+        candidatePoints.push({ x: newBox.x + newBox.w, y: b.y + b.l, z: newBox.z + newBox.h });
       }
       // Projection along Y
       if (b.y + b.l <= newBox.y + newBox.l && b.x < newBox.x + newBox.w && b.x + b.w > newBox.x) {
         candidatePoints.push({ x: b.x + b.w, y: newBox.y + newBox.l, z: newBox.z });
+        candidatePoints.push({ x: b.x + b.w, y: newBox.y + newBox.l, z: newBox.z + newBox.h });
       }
       // Projection along Z
       if (b.z + b.h <= newBox.z + newBox.h && b.x < newBox.x + newBox.w && b.x + b.w > newBox.x) {
         candidatePoints.push({ x: b.x + b.w, y: newBox.y, z: b.z + b.h });
+        candidatePoints.push({ x: newBox.x, y: b.y + b.l, z: b.z + b.h });
+      }
+      // On top of newBox: projections of existing boxes with matching top heights
+      if (Math.abs(b.z + b.h - (newBox.z + newBox.h)) <= contactToleranceMm) {
+        candidatePoints.push({ x: b.x + b.w, y: newBox.y, z: newBox.z + newBox.h });
+        candidatePoints.push({ x: newBox.x, y: b.y + b.l, z: newBox.z + newBox.h });
       }
     }
 

@@ -5,6 +5,8 @@ import {
   UnplacedPackage,
   PackingOptions,
   PackingResult,
+  PackingStrategy,
+  MultiStrategyPackingResult,
 } from '../geometry/types';
 import { Box3D, getOrientedDimensions, getValidRotations, isInsideContainer } from '../geometry/aabb';
 import { VoxelGrid3D } from '../geometry/voxel-grid';
@@ -17,6 +19,12 @@ import {
   PlacedItemState,
 } from '../physics/center-of-gravity';
 import { SeededRandom, computeFingerprintSeed } from '../prng/seeded-random';
+import {
+  evaluateStrategyCriteria,
+  evaluateAccessibility,
+  evaluateLifo,
+  PlacedPackageWithBox,
+} from '../evaluation/criteria';
 
 interface CandidateScore {
   pointIndex: number;
@@ -40,6 +48,7 @@ export class ExtremePointPacker {
           );
 
     this.options = {
+      strategy: options?.strategy ?? 'MAX_VOLUME',
       timeBudgetMs: options?.timeBudgetMs ?? 8000,
       seed,
       maxEvaluations: options?.maxEvaluations ?? 8,
@@ -61,7 +70,8 @@ export class ExtremePointPacker {
       BigInt(this.container.innerHeightMm);
 
     if (packages.length === 0) {
-      return {
+      const emptyResult: PackingResult = {
+        strategy: this.options.strategy,
         fillRateBps: 0,
         centerOfGravity: {
           xMm: Math.round(this.container.innerLengthMm / 2),
@@ -81,6 +91,13 @@ export class ExtremePointPacker {
         iterationsExecuted: 0,
         watchdogTriggered: false,
       };
+      emptyResult.evaluation = evaluateStrategyCriteria(
+        this.container,
+        packages,
+        emptyResult,
+        this.options.strategy,
+      );
+      return emptyResult;
     }
 
     // Filter out packages that cannot fit in any orientation or exceed container payload alone
@@ -114,10 +131,17 @@ export class ExtremePointPacker {
       }
     }
 
+    const minDims = eligiblePackages
+      .map((p) => Math.min(p.lengthMm, p.widthMm, p.heightMm))
+      .sort((a, b) => a - b);
+    const typicalMinDim =
+      minDims.length > 0 ? minDims[Math.floor(minDims.length * 0.2)] : 500;
+
     // Generate deterministic sorting permutations (Heuristics)
-    const permutations = this.generateOrderings(eligiblePackages);
+    const permutations = this.generateOrderings(eligiblePackages, typicalMinDim);
 
     let bestPlacements: PlacedItemState[] = [];
+    let bestScore = -Infinity;
     let bestVolume = 0n;
     let bestWeight = 0;
     let bestUnplacedReasons = new Map<string, UnplacedPackage['reason']>();
@@ -141,9 +165,32 @@ export class ExtremePointPacker {
       }
 
       iterations++;
-      const result = this.packSinglePass(orderedList);
+      const result = this.packSinglePass(orderedList, typicalMinDim);
 
-      if (result.totalVolume > bestVolume) {
+      let permScore = Number(result.totalVolume);
+      if (this.options.strategy === 'CONSIGNEE_GROUPED') {
+        const placementsWithBoxes: PlacedPackageWithBox[] = result.placements.map((p) => ({
+          item: p.item,
+          box: p.box,
+          rotation: p.rotation,
+        }));
+        const evalRes = evaluateAccessibility(placementsWithBoxes);
+        permScore = Number(result.totalVolume) * (0.3 + 0.7 * (evalRes / 100));
+      } else if (this.options.strategy === 'LIFO_PRIORITY') {
+        const placementsWithBoxes: PlacedPackageWithBox[] = result.placements.map((p) => ({
+          item: p.item,
+          box: p.box,
+          rotation: p.rotation,
+        }));
+        const evalRes = evaluateLifo(placementsWithBoxes);
+        permScore = Number(result.totalVolume) * (0.3 + 0.7 * (evalRes / 100));
+      }
+
+      if (
+        permScore > bestScore ||
+        (permScore === bestScore && result.placements.length > bestPlacements.length)
+      ) {
+        bestScore = permScore;
         bestVolume = result.totalVolume;
         bestWeight = result.totalWeight;
         bestPlacements = result.placements;
@@ -221,7 +268,8 @@ export class ExtremePointPacker {
       layerIndex: Math.floor(p.box.z / 500),
     }));
 
-    return {
+    const finalResult: PackingResult = {
+      strategy: this.options.strategy,
       fillRateBps,
       centerOfGravity: repairRes.cog,
       placedPackages: formattedPlacements,
@@ -243,12 +291,24 @@ export class ExtremePointPacker {
       },
       rejectionStats: bestRejectionStats,
     };
+
+    finalResult.evaluation = evaluateStrategyCriteria(
+      this.container,
+      packages,
+      finalResult,
+      this.options.strategy,
+    );
+
+    return finalResult;
   }
 
   /**
    * Executes a single constructive packing pass using Extreme Points.
    */
-  private packSinglePass(items: PackageItem[]): {
+  private packSinglePass(
+    items: PackageItem[],
+    typicalMinDim: number,
+  ): {
     placements: PlacedItemState[];
     totalVolume: bigint;
     totalWeight: number;
@@ -356,6 +416,7 @@ export class ExtremePointPacker {
             maxDrop,
             supportEval.supportRatioBps,
             placements,
+            typicalMinDim,
           );
 
           candidateScores.push({
@@ -411,7 +472,8 @@ export class ExtremePointPacker {
 
   /**
    * Placement evaluation scoring function.
-   * Balances compactness, soft CoG attraction to center, LIFO ordering, and support firmness.
+   * Balances compactness, soft CoG attraction to center, LIFO ordering, vertical tier headroom,
+   * flat-deck formation, and width utilization.
    */
   private calculatePlacementScore(
     box: Box3D,
@@ -419,13 +481,14 @@ export class ExtremePointPacker {
     maxDrop: number,
     supportRatioBps: number,
     currentPlacements: readonly PlacedItemState[],
+    typicalMinDim: number,
   ): number {
     const L = this.container.innerLengthMm;
     const W = this.container.innerWidthMm;
     const H = this.container.innerHeightMm;
 
     // 1. Compactness: Prioritize lowest Z, then deepest X (from back wall to doors), then tightest Y
-    const fCompact = - (3.0 * (box.z / H) + 2.0 * (box.x / L) + 1.0 * (box.y / W));
+    const fCompact = - (3000 * (box.z / H) + 2000 * (box.x / L) + 1000 * (box.y / W));
 
     // 2. Soft CoG Pull: evaluate where CoG would move
     const testPlacements = [...currentPlacements, { item, box, rotation: 0 }];
@@ -434,66 +497,307 @@ export class ExtremePointPacker {
     // Steep penalty if CoG strays outside safety corridor [45%, 55%]
     const fCog = diff > 5.0 ? - (diff * diff * 40) : - (diff * 20);
 
-    // 3. LIFO bonus: early drop packages are rewarded when closer to doors (+X)
-    const drop = item.dropOrder ?? 1;
-    const dropPriority = (maxDrop - drop + 1) / maxDrop;
-    const fLifo = ((box.x + box.w) / L) * dropPriority;
+    // 3. LIFO bonus: only active for LIFO_PRIORITY strategy
+    let fLifo = 0;
+    if (this.options.strategy === 'LIFO_PRIORITY') {
+      const drop = item.dropOrder ?? 1;
+      const dropPriority = (maxDrop - drop + 1) / maxDrop;
+      fLifo = ((box.x + box.w) / L) * dropPriority * 500;
+    }
 
     // 4. Support bonus: higher contact ratio is preferred
-    const fSupport = supportRatioBps / 10000;
+    const fSupport = (supportRatioBps / 10000) * 800;
 
-    return 1000 * fCompact + fCog + 500 * fLifo + 500 * fSupport;
+    // 5. Headroom & Vertical Tier Stacking Heuristics:
+    const topZ = box.z + box.h;
+    const remainingHeadroom = H - topZ;
+    let fHeadroom = 0;
+
+    // Headroom penalty only applies when there is potential for at least 2 packages above box.z
+    // (i.e. this is NOT the top tier), but this placement consumes so much height that
+    // remaining headroom is smaller than a standard package, killing the tier above it.
+    if (box.z + 2 * typicalMinDim <= H) {
+      if (remainingHeadroom > 0 && remainingHeadroom < typicalMinDim) {
+        fHeadroom = -15000;
+      }
+      // Mid-tier coordination: on intermediate tiers, penalize pushing topZ beyond the boundary
+      // needed for the final tier (H - typicalMinDim)
+      if (box.z >= typicalMinDim * 0.7 && topZ > H - typicalMinDim) {
+        fHeadroom -= 20000;
+      }
+    }
+
+    // 6. Coplanar Deck Alignment Bonus:
+    // Forming continuous flat decks gives upper packages strong bottom support
+    let fCoplanar = 0;
+    if (topZ < H) {
+      for (const p of currentPlacements) {
+        if (Math.abs((p.box.z + p.box.h) - topZ) <= this.options.contactToleranceMm) {
+          fCoplanar = 2500;
+          break;
+        }
+      }
+    }
+
+    // 7. Tier-specialization:
+    // Large items (min dimension >= 0.33 * H) should be placed on lower tiers (z < H * 0.65)
+    // Packages with height <= typicalMinDim fit easily on the top tier
+    const pkgMinDim = Math.min(item.lengthMm, item.widthMm, item.heightMm);
+    let fTierSpecialization = 0;
+    if (box.z + 2 * typicalMinDim <= H) {
+      if (pkgMinDim >= 0.33 * H) {
+        fTierSpecialization = 4000;
+      }
+    } else {
+      if (box.h <= typicalMinDim) {
+        fTierSpecialization = 5000;
+      }
+    }
+
+    // 8. noStack Handling:
+    // Penalize placing noStack packages on lower tiers where they block vertical space.
+    // Reward placing them near the top where nothing needs to be stacked on them.
+    let fNoStack = 0;
+    if (item.noStack) {
+      if (box.z + 2 * typicalMinDim <= H) {
+        fNoStack = -12000;
+      } else {
+        fNoStack = 8000;
+      }
+    }
+
+    // 9. Width Utilization along Y:
+    let fWidth = 0;
+    const yExtent = box.y + box.l;
+    if (box.y === 0) {
+      if (box.l >= W * 0.42 && box.l <= W * 0.52) fWidth = 1500;
+    } else {
+      const unusedY = W - yExtent;
+      if (unusedY >= 0 && unusedY < 250) fWidth = 2000;
+    }
+
+    // 10. Low profile bonus on lower tiers:
+    let fProfile = 0;
+    if (box.z + 2 * typicalMinDim <= H) {
+      if (box.h <= typicalMinDim) fProfile = 2500;
+    } else {
+      fProfile = (box.h / H) * 1000;
+    }
+
+    let score =
+      fCompact +
+      fCog +
+      fLifo +
+      fSupport +
+      fHeadroom +
+      fCoplanar +
+      fTierSpecialization +
+      fNoStack +
+      fWidth +
+      fProfile;
+
+    if (this.options.strategy === 'CONSIGNEE_GROUPED') {
+      let fCluster = 0;
+      for (const placed of currentPlacements) {
+        const dx = Math.max(0, Math.max(box.x, placed.box.x) - Math.min(box.x + box.w, placed.box.x + placed.box.w));
+        const dy = Math.max(0, Math.max(box.y, placed.box.y) - Math.min(box.y + box.l, placed.box.y + placed.box.l));
+        const dz = Math.max(0, Math.max(box.z, placed.box.z) - Math.min(box.z + box.h, placed.box.z + placed.box.h));
+
+        if (dx <= 20 && dy <= 20 && dz <= 20) {
+          if (placed.item.companyId && item.companyId && placed.item.companyId === item.companyId) {
+            fCluster += 10000;
+          } else {
+            fCluster -= 5000;
+          }
+        }
+      }
+      score += fCluster;
+    } else if (this.options.strategy === 'LIFO_PRIORITY') {
+      const drop = item.dropOrder ?? 1;
+      const targetXFrac = 1.0 - (drop - 1) / Math.max(1, maxDrop - 1);
+      const actualXFrac = (box.x + box.w / 2) / L;
+      const xDist = Math.abs(actualXFrac - targetXFrac);
+      score += - xDist * 10000;
+    }
+
+    return score;
   }
 
   /**
    * Generates deterministic permutations and sortings of package items.
    */
-  private generateOrderings(items: PackageItem[]): PackageItem[][] {
+  private generateOrderings(items: PackageItem[], _typicalMinDim: number): PackageItem[][] {
     const orderings: PackageItem[][] = [];
 
-    // Heuristic 1: Volume descending (Best Fit)
-    orderings.push(
-      [...items].sort((a, b) => {
-        const va = BigInt(a.lengthMm) * BigInt(a.widthMm) * BigInt(a.heightMm);
-        const vb = BigInt(b.lengthMm) * BigInt(b.widthMm) * BigInt(b.heightMm);
-        if (vb > va) return 1;
-        if (vb < va) return -1;
-        return b.weightGram - a.weightGram;
-      }),
-    );
+    if (this.options.strategy === 'CONSIGNEE_GROUPED') {
+      const companies = Array.from(new Set(items.map((i) => i.companyId ?? 'DEFAULT')));
+      const compVolumes = new Map<string, number>();
+      for (const c of companies) {
+        const v = items
+          .filter((i) => (i.companyId ?? 'DEFAULT') === c)
+          .reduce((sum, i) => sum + i.lengthMm * i.widthMm * i.heightMm, 0);
+        compVolumes.set(c, v);
+      }
 
-    // Heuristic 2: Weight descending (heavy on bottom)
-    orderings.push(
-      [...items].sort((a, b) => {
-        if (b.weightGram !== a.weightGram) return b.weightGram - a.weightGram;
-        const va = a.lengthMm * a.widthMm * a.heightMm;
-        const vb = b.lengthMm * b.widthMm * b.heightMm;
-        return vb - va;
-      }),
-    );
+      const companyPermutations = [
+        [...companies].sort((a, b) => (compVolumes.get(b) ?? 0) - (compVolumes.get(a) ?? 0)),
+        [...companies].sort((a, b) => a.localeCompare(b)),
+        [...companies].reverse(),
+      ];
 
-    // Heuristic 3: Max base area descending (w * l)
-    orderings.push(
-      [...items].sort((a, b) => {
-        const baseA = Math.max(a.lengthMm * a.widthMm, a.lengthMm * a.heightMm, a.widthMm * a.heightMm);
-        const baseB = Math.max(b.lengthMm * b.widthMm, b.lengthMm * b.heightMm, b.widthMm * b.heightMm);
-        return baseB - baseA;
-      }),
-    );
+      for (const cOrder of companyPermutations) {
+        const perm: PackageItem[] = [];
+        for (const c of cOrder) {
+          const cItems = items
+            .filter((i) => (i.companyId ?? 'DEFAULT') === c)
+            .sort((a, b) => {
+              if (a.noStack !== b.noStack) return a.noStack ? 1 : -1;
+              const va = BigInt(a.lengthMm) * BigInt(a.widthMm) * BigInt(a.heightMm);
+              const vb = BigInt(b.lengthMm) * BigInt(b.widthMm) * BigInt(b.heightMm);
+              if (vb > va) return 1;
+              if (vb < va) return -1;
+              return b.weightGram - a.weightGram;
+            });
+          perm.push(...cItems);
+        }
+        orderings.push(perm);
+      }
+    } else if (this.options.strategy === 'LIFO_PRIORITY') {
+      // Group strictly by dropOrder DESCENDING (late drops packed first at X=0, early drops at doors X=L)
+      const dropOrders = Array.from(new Set(items.map((i) => i.dropOrder ?? 1))).sort((a, b) => b - a);
 
-    // Heuristic 4: DropOrder ascending, then volume descending
-    orderings.push(
-      [...items].sort((a, b) => {
-        const da = a.dropOrder ?? 1;
-        const db = b.dropOrder ?? 1;
-        if (da !== db) return da - db;
-        const va = a.lengthMm * a.widthMm * a.heightMm;
-        const vb = b.lengthMm * b.widthMm * b.heightMm;
-        return vb - va;
-      }),
-    );
+      // Ordering 1: DropOrder descending, stackable first, then volume descending
+      const perm1: PackageItem[] = [];
+      for (const d of dropOrders) {
+        const dItems = items
+          .filter((i) => (i.dropOrder ?? 1) === d)
+          .sort((a, b) => {
+            if (a.noStack !== b.noStack) return a.noStack ? 1 : -1;
+            const va = BigInt(a.lengthMm) * BigInt(a.widthMm) * BigInt(a.heightMm);
+            const vb = BigInt(b.lengthMm) * BigInt(b.widthMm) * BigInt(b.heightMm);
+            if (vb > va) return 1;
+            if (vb < va) return -1;
+            return b.weightGram - a.weightGram;
+          });
+        perm1.push(...dItems);
+      }
+      orderings.push(perm1);
 
-    // Further permutations via deterministic seeded shuffle up to maxEvaluations
+      // Ordering 2: DropOrder descending, weight descending
+      const perm2: PackageItem[] = [];
+      for (const d of dropOrders) {
+        const dItems = items
+          .filter((i) => (i.dropOrder ?? 1) === d)
+          .sort((a, b) => b.weightGram - a.weightGram);
+        perm2.push(...dItems);
+      }
+      orderings.push(perm2);
+
+      // Ordering 3: DropOrder descending, base area descending
+      const perm3: PackageItem[] = [];
+      for (const d of dropOrders) {
+        const dItems = items
+          .filter((i) => (i.dropOrder ?? 1) === d)
+          .sort((a, b) => {
+            const baseA = Math.max(a.lengthMm * a.widthMm, a.lengthMm * a.heightMm, a.widthMm * a.heightMm);
+            const baseB = Math.max(b.lengthMm * b.widthMm, b.lengthMm * b.heightMm, b.widthMm * b.heightMm);
+            return baseB - baseA;
+          });
+        perm3.push(...dItems);
+      }
+      orderings.push(perm3);
+    } else {
+      // Heuristic 1: Stackable first, then Volume descending (Standard Best Fit Decreasing)
+      orderings.push(
+        [...items].sort((a, b) => {
+          if (a.noStack !== b.noStack) return a.noStack ? 1 : -1;
+          const va = BigInt(a.lengthMm) * BigInt(a.widthMm) * BigInt(a.heightMm);
+          const vb = BigInt(b.lengthMm) * BigInt(b.widthMm) * BigInt(b.heightMm);
+          if (vb > va) return 1;
+          if (vb < va) return -1;
+          return b.weightGram - a.weightGram;
+        }),
+      );
+
+      // Heuristic 2: Height-inflexible first (large min dimension), then Volume descending
+      orderings.push(
+        [...items].sort((a, b) => {
+          if (a.noStack !== b.noStack) return a.noStack ? 1 : -1;
+          const minA = Math.min(a.lengthMm, a.widthMm, a.heightMm);
+          const minB = Math.min(b.lengthMm, b.widthMm, b.heightMm);
+          const infA = minA >= 0.33 * this.container.innerHeightMm ? 1 : 0;
+          const infB = minB >= 0.33 * this.container.innerHeightMm ? 1 : 0;
+          if (infA !== infB) return infB - infA;
+          const va = BigInt(a.lengthMm) * BigInt(a.widthMm) * BigInt(a.heightMm);
+          const vb = BigInt(b.lengthMm) * BigInt(b.widthMm) * BigInt(b.heightMm);
+          if (vb > va) return 1;
+          if (vb < va) return -1;
+          return b.weightGram - a.weightGram;
+        }),
+      );
+
+      // Heuristic 3: Density descending (mass / volume)
+      orderings.push(
+        [...items].sort((a, b) => {
+          if (a.noStack !== b.noStack) return a.noStack ? 1 : -1;
+          const densA = a.weightGram / (a.lengthMm * a.widthMm * a.heightMm);
+          const densB = b.weightGram / (b.lengthMm * b.widthMm * b.heightMm);
+          return densB - densA;
+        }),
+      );
+
+      // Heuristic 4: Shipment Lot Batching (if multiple company IDs exist)
+      const companies = Array.from(new Set(items.map((i) => i.companyId ?? 'DEFAULT')));
+      if (companies.length > 1) {
+        const compVolumes = new Map<string, number>();
+        for (const c of companies) {
+          const v = items
+            .filter((i) => (i.companyId ?? 'DEFAULT') === c)
+            .reduce((sum, i) => sum + i.lengthMm * i.widthMm * i.heightMm, 0);
+          compVolumes.set(c, v);
+        }
+        const compsByVolDesc = [...companies].sort((a, b) => (compVolumes.get(b) ?? 0) - (compVolumes.get(a) ?? 0));
+        const lotBatchAsc: PackageItem[] = [];
+        for (const c of [...compsByVolDesc].reverse()) {
+          const cItems = items
+            .filter((i) => (i.companyId ?? 'DEFAULT') === c)
+            .sort((a, b) => {
+              if (a.noStack !== b.noStack) return a.noStack ? 1 : -1;
+              const va = BigInt(a.lengthMm) * BigInt(a.widthMm) * BigInt(a.heightMm);
+              const vb = BigInt(b.lengthMm) * BigInt(b.widthMm) * BigInt(b.heightMm);
+              if (vb > va) return 1;
+              if (vb < va) return -1;
+              return b.weightGram - a.weightGram;
+            });
+          lotBatchAsc.push(...cItems);
+        }
+        orderings.push(lotBatchAsc);
+
+        // Perturbations of lot batching with windowed shuffle
+        const baseList = [...lotBatchAsc];
+        for (let i = 0; i < 2; i++) {
+          const copy = [...baseList];
+          const windowSize = Math.min(5, copy.length);
+          for (let j = 0; j < copy.length - windowSize; j += windowSize) {
+            const slice = copy.slice(j, j + windowSize);
+            this.rng.shuffle(slice);
+            copy.splice(j, windowSize, ...slice);
+          }
+          orderings.push(copy);
+        }
+      }
+
+      // Heuristic 5: Max base area descending (w * l)
+      orderings.push(
+        [...items].sort((a, b) => {
+          const baseA = Math.max(a.lengthMm * a.widthMm, a.lengthMm * a.heightMm, a.widthMm * a.heightMm);
+          const baseB = Math.max(b.lengthMm * b.widthMm, b.lengthMm * b.heightMm, b.widthMm * b.heightMm);
+          return baseB - baseA;
+        }),
+      );
+    }
+
+    // Further permutations via deterministic seeded shuffle up to maxEvaluations if needed
     const baseList = [...orderings[0]];
     const extraNeeded = Math.max(0, this.options.maxEvaluations - orderings.length);
     for (let i = 0; i < extraNeeded; i++) {
@@ -513,7 +817,7 @@ export class ExtremePointPacker {
 }
 
 /**
- * Top-level pure function to pack packages into a container.
+ * Top-level pure function to pack packages into a container using a single strategy.
  */
 export function packContainers(
   container: ContainerDimension,
@@ -522,4 +826,45 @@ export function packContainers(
 ): PackingResult {
   const packer = new ExtremePointPacker(container, options);
   return packer.pack(packages);
+}
+
+/**
+ * Top-level pure function to pack packages across all 3 strategies concurrently.
+ */
+export function packMultiStrategies(
+  container: ContainerDimension,
+  packages: PackageItem[],
+  options?: Omit<PackingOptions, 'strategy'>,
+): MultiStrategyPackingResult {
+  const startTime = Date.now();
+  const strategies: PackingStrategy[] = [
+    'CONSIGNEE_GROUPED',
+    'MAX_VOLUME',
+    'LIFO_PRIORITY',
+  ];
+
+  const results: Record<PackingStrategy, PackingResult> = {} as any;
+  for (const strat of strategies) {
+    const packer = new ExtremePointPacker(container, {
+      ...options,
+      strategy: strat,
+    });
+    results[strat] = packer.pack(packages);
+  }
+
+  let bestStrat: PackingStrategy = 'MAX_VOLUME';
+  let highestOverall = -1;
+  for (const strat of strategies) {
+    const score = results[strat].evaluation?.overallScore ?? 0;
+    if (score > highestOverall) {
+      highestOverall = score;
+      bestStrat = strat;
+    }
+  }
+
+  return {
+    strategies: results,
+    recommendedStrategy: bestStrat,
+    executionTimeMs: Date.now() - startTime,
+  };
 }

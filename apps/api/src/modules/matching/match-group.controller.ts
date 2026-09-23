@@ -48,12 +48,38 @@ export class MatchGroupController {
     return this.matchingService.getUnassignedShipments(laneId);
   }
 
+  @Get('fwd-metrics')
+  @Roles(
+    UserRole.PLATFORM_ADMIN,
+    UserRole.ADMIN,
+    UserRole.FWD_ADMIN,
+    UserRole.FWD_OPERATOR,
+  )
+  async getFwdMetrics(@CurrentUser() user: any) {
+    return this.matchingService.getFwdMetrics(user.companyId, user.role);
+  }
+
   @Get()
   async findAll(
     @Query() query: MatchGroupQueryDto,
     @CurrentUser() user: any,
   ) {
     return this.matchingService.findAll(query, user);
+  }
+
+  @Post(':id/shipments/:shipmentId/withdraw')
+  @Roles(
+    UserRole.PLATFORM_ADMIN,
+    UserRole.ADMIN,
+    UserRole.SHIPPER_ADMIN,
+    UserRole.SHIPPER_MEMBER,
+  )
+  async withdrawShipment(
+    @Param('id') matchGroupId: string,
+    @Param('shipmentId') shipmentId: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.matchingService.withdrawShipment(matchGroupId, shipmentId, user);
   }
 
   @Get(':id')

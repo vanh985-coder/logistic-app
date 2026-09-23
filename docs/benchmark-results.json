@@ -8,7 +8,7 @@
     "totalPackages": 1050,
     "containersNeeded": 2,
     "container1CogX": 49.87,
-    "totalTimeMs": 1269
+    "totalTimeMs": 1503
   },
   {
     "strategy": "B_EXPERIENCED",
@@ -19,18 +19,18 @@
     "totalPackages": 1050,
     "containersNeeded": 2,
     "container1CogX": 49.87,
-    "totalTimeMs": 1163
+    "totalTimeMs": 1743
   },
   {
     "strategy": "C_EXTREME_POINT",
     "scenario": "1. Hàng đồng nhất (1,050 thùng 600x400x400)",
     "inputVolumeM3": 100.8,
-    "container1FillRatePct": 75.44,
-    "container1PlacedCount": 600,
+    "container1FillRatePct": 79.08,
+    "container1PlacedCount": 629,
     "totalPackages": 1050,
     "containersNeeded": 2,
-    "container1CogX": 49.87,
-    "totalTimeMs": 22104
+    "container1CogX": 49.39,
+    "totalTimeMs": 54148
   },
   {
     "strategy": "A_MANUAL",
@@ -41,7 +41,7 @@
     "totalPackages": 350,
     "containersNeeded": 4,
     "container1CogX": 49.9,
-    "totalTimeMs": 473
+    "totalTimeMs": 601
   },
   {
     "strategy": "B_EXPERIENCED",
@@ -52,18 +52,18 @@
     "totalPackages": 350,
     "containersNeeded": 4,
     "container1CogX": 49.05,
-    "totalTimeMs": 1022
+    "totalTimeMs": 754
   },
   {
     "strategy": "C_EXTREME_POINT",
     "scenario": "2. Hàng hỗn hợp (350 kiện ngẫu nhiên 300-1200mm)",
     "inputVolumeM3": 157.56,
-    "container1FillRatePct": 78.48,
-    "container1PlacedCount": 77,
+    "container1FillRatePct": 82.09,
+    "container1PlacedCount": 79,
     "totalPackages": 350,
-    "containersNeeded": 3,
-    "container1CogX": 50.56,
-    "totalTimeMs": 19134
+    "containersNeeded": 4,
+    "container1CogX": 49.28,
+    "totalTimeMs": 15602
   },
   {
     "strategy": "A_MANUAL",
@@ -74,7 +74,7 @@
     "totalPackages": 250,
     "containersNeeded": 5,
     "container1CogX": 40.85,
-    "totalTimeMs": 203
+    "totalTimeMs": 498
   },
   {
     "strategy": "B_EXPERIENCED",
@@ -85,17 +85,17 @@
     "totalPackages": 250,
     "containersNeeded": 4,
     "container1CogX": 53.08,
-    "totalTimeMs": 358
+    "totalTimeMs": 880
   },
   {
     "strategy": "C_EXTREME_POINT",
     "scenario": "3. Hàng khó (250 kiện, tỷ lệ cạnh > 5, 33% noStack)",
     "inputVolumeM3": 66.73,
-    "container1FillRatePct": 51.88,
-    "container1PlacedCount": 107,
+    "container1FillRatePct": 66.79,
+    "container1PlacedCount": 168,
     "totalPackages": 250,
     "containersNeeded": 2,
-    "container1CogX": 50.56,
-    "totalTimeMs": 12268
+    "container1CogX": 48.92,
+    "totalTimeMs": 10526
   }
 ]

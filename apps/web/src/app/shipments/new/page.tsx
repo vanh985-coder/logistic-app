@@ -8,7 +8,6 @@ import { fetchApi } from '@/lib/api-client';
 import {
   PackageType,
   calculateShipmentPricing,
-  calcVolumeMm3,
   cbmFromVolumeMm3,
   kgFromWeightGrams,
   parseAndValidateExcelRows,
@@ -25,7 +24,9 @@ import {
   Plus,
   Trash2,
   Info,
+  MapPin,
 } from 'lucide-react';
+import { Button, Stepper, Card } from '@/components/ui';
 
 interface Lane {
   id: string;
@@ -63,6 +64,7 @@ interface ExcelError {
   column: string;
   message: string;
 }
+
 export default function NewShipmentPage() {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState<number>(1);
@@ -94,13 +96,27 @@ export default function NewShipmentPage() {
   const selectedLane = lanes?.find((l) => l.id === selectedLaneId) ?? null;
   const pricingConfig = selectedLane?.currentPricingConfig ?? null;
 
+  // Auto-select first lane if available and none selected
+  React.useEffect(() => {
+    if (lanes && lanes.length > 0 && !selectedLaneId) {
+      setSelectedLaneId(lanes[0].id);
+    }
+  }, [lanes, selectedLaneId]);
+
+  const isStep2Valid = React.useMemo(() => {
+    if (packages.length === 0) return false;
+    return packages.every(
+      (p) => p.lengthMm > 0 && p.widthMm > 0 && p.heightMm > 0 && p.weightGrams > 0
+    );
+  }, [packages]);
+
   const formatVnd = (val: string | number | bigint) => {
     const num = typeof val === 'bigint' ? Number(val) : typeof val === 'string' ? Number(val) : val;
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(num);
   };
 
   const pricingPreview = React.useMemo(() => {
-    if (!pricingConfig || packages.length === 0) return null;
+    if (!pricingConfig || !isStep2Valid) return null;
 
     const configInput: PricingConfigInput = {
       cbmRate: BigInt(pricingConfig.cbmRate),
@@ -120,19 +136,24 @@ export default function NewShipmentPage() {
       weightGrams: p.weightGrams,
       isFragile: p.isFragile,
       noStack: p.noStack,
-      volumeMm3: calcVolumeMm3(p.lengthMm, p.widthMm, p.heightMm),
+      packageType: p.packageType,
     }));
 
-    return calculateShipmentPricing(packageInputs, configInput);
-  }, [pricingConfig, packages]);
+    try {
+      return calculateShipmentPricing(packageInputs, configInput);
+    } catch {
+      return null;
+    }
+  }, [pricingConfig, packages, isStep2Valid]);
 
   const handleAddPackageRow = () => {
-    const nextNum = packages.length + 1;
+    const newId = String(Date.now());
+    const nextCode = `PKG-${String(packages.length + 1).padStart(3, '0')}`;
     setPackages([
       ...packages,
       {
-        id: String(Date.now()),
-        packageCode: `PKG-${String(nextNum).padStart(3, '0')}`,
+        id: newId,
+        packageCode: nextCode,
         lengthMm: 0,
         widthMm: 0,
         heightMm: 0,
@@ -144,92 +165,99 @@ export default function NewShipmentPage() {
     ]);
   };
 
-  const handleProceedToStep3 = () => {
-    setSubmitError(null);
-    for (const p of packages) {
-      if (p.lengthMm <= 0 || p.widthMm <= 0 || p.heightMm <= 0 || p.weightGrams <= 0) {
-        setSubmitError(`Kiện "${p.packageCode}" chưa nhập đầy đủ kích thước hoặc khối lượng (phải lớn hơn 0).`);
-        return;
-      }
-    }
-    setCurrentStep(3);
-  };
-
   const handleRemovePackageRow = (id: string) => {
     if (packages.length <= 1) return;
     setPackages(packages.filter((p) => p.id !== id));
   };
 
-  const handleUpdatePackage = (id: string, field: keyof PackageItem, value: any) => {
+  const handleUpdatePackage = (
+    id: string,
+    field: keyof PackageItem,
+    value: any
+  ) => {
     setPackages(
-      packages.map((p) => (p.id === id ? { ...p, [field]: value } : p)),
+      packages.map((p) => {
+        if (p.id !== id) return p;
+        return { ...p, [field]: value };
+      })
     );
   };
+
+  const handleDownloadTemplate = () => {
+    const csvContent =
+      'packageCode,lengthMm,widthMm,heightMm,weightGrams,isFragile,noStack,packageType\n' +
+      'PKG-001,1200,800,1000,150000,false,false,BOX\n' +
+      'PKG-002,600,400,500,45000,true,false,BOX\n' +
+      'PKG-003,1100,1100,1200,300000,false,true,PALLET\n';
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'mau_danh_sach_kien_hang_logix3d.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setExcelErrors([]);
     setIsUploading(true);
+    setExcelErrors([]);
 
     try {
-      const xlsx = await import('xlsx');
-      const buffer = await file.arrayBuffer();
-      const wb = xlsx.read(buffer, { type: 'array' });
-      const firstSheet = wb.Sheets[wb.SheetNames[0]];
-      const rawRows: any[][] = xlsx.utils.sheet_to_json(firstSheet, {
-        header: 1,
-        defval: '',
-        blankrows: false,
-      });
+      const text = await file.text();
+      const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+      if (lines.length <= 1) {
+        setExcelErrors([{ row: 1, column: 'File', message: 'File không có dữ liệu kiện hàng' }]);
+        setIsUploading(false);
+        return;
+      }
 
-      // Use shared validator so logic is identical between frontend preview & backend
+      const rawRows: any[][] = lines.map((line) => line.split(',').map((v) => v.trim()));
+
       const result = parseAndValidateExcelRows(rawRows);
-
-      if (result.errors.length > 0) {
-        setExcelErrors(result.errors);
-      }
-
-      if (result.packages.length > 0) {
-        setPackages(
-          result.packages.map((p, idx) => ({
-            id: String(Date.now() + idx),
-            packageCode: p.packageCode,
-            lengthMm: p.lengthMm,
-            widthMm: p.widthMm,
-            heightMm: p.heightMm,
-            weightGrams: p.weightGrams,
-            isFragile: p.isFragile,
-            noStack: p.noStack,
-            packageType: p.packageType,
-          })),
+      if (!result.success) {
+        setExcelErrors(
+          result.errors.map((err) => ({
+            row: err.row,
+            column: err.column,
+            message: err.message,
+          }))
         );
+      } else {
+        const newPackages: PackageItem[] = result.packages.map((r, idx) => ({
+          id: String(Date.now() + idx),
+          packageCode: r.packageCode,
+          lengthMm: r.lengthMm,
+          widthMm: r.widthMm,
+          heightMm: r.heightMm,
+          weightGrams: r.weightGrams,
+          isFragile: r.isFragile,
+          noStack: r.noStack,
+          packageType: r.packageType as PackageType,
+        }));
+        setPackages(newPackages);
       }
-    } catch {
-      setExcelErrors([
-        {
-          row: 0,
-          column: 'FILE',
-          message: 'Không thể đọc file Excel. Vui lòng kiểm tra định dạng',
-        },
-      ]);
+    } catch (err: any) {
+      setExcelErrors([{ row: 0, column: 'File', message: err.message || 'Lỗi đọc file' }]);
     } finally {
       setIsUploading(false);
+      e.target.value = '';
     }
   };
 
-  const handleDownloadTemplate = async () => {
-    const xlsx = await import('xlsx');
-    const wsData = [
-      ['Mã kiện', 'Dài (mm)', 'Rộng (mm)', 'Cao (mm)', 'Trọng lượng (g)', 'Dễ vỡ (có/không)', 'Không chồng (có/không)', 'Loại kiện (BOX/PALLET/CRATE)'],
-      ['PKG-001', 600, 400, 300, 10000, 'không', 'không', 'BOX'],
-      ['PKG-002', 1200, 800, 900, 35000, 'có', 'không', 'PALLET'],
-      ['PKG-003', 500, 500, 500, 12000, 'không', 'có', 'BOX'],
-    ];
-    const ws = xlsx.utils.aoa_to_sheet(wsData);
-    const wb = xlsx.utils.book_new();
-    xlsx.utils.book_append_sheet(wb, ws, 'Mau_Kien_Hang');
-    xlsx.writeFile(wb, 'mau_danh_sach_kien_hang.xlsx');
+  const handleProceedToStep3 = () => {
+    if (!isStep2Valid) {
+      setSubmitError(
+        'Vui lòng nhập kích thước (dài, rộng, cao > 0 mm) và khối lượng (> 0 g) cho tất cả các kiện để tiếp tục',
+      );
+      return;
+    }
+    setSubmitError(null);
+    setCurrentStep(3);
   };
 
   const handleCreateShipment = async (autoSubmit: boolean) => {
@@ -251,7 +279,6 @@ export default function NewShipmentPage() {
         body: JSON.stringify({ laneId: selectedLaneId }),
       });
 
-      // Batch insert packages in a single request instead of N+1 requests
       await fetchApi(`/shipments/${shipment.id}/packages/batch`, {
         method: 'POST',
         body: JSON.stringify({
@@ -281,64 +308,49 @@ export default function NewShipmentPage() {
       setIsSubmitting(false);
     }
   };
+
   return (
-    <div className="max-w-5xl mx-auto space-y-8 pb-12">
+    <div className="max-w-5xl mx-auto space-y-6 pb-12 font-sans">
+      {/* Header */}
       <div>
-        <div className="flex items-center gap-2 text-xs text-slate-400 mb-2">
-          <Link href="/shipments" className="hover:text-blue-400 transition">
+        <div className="flex items-center gap-2 text-xs text-text-secondary mb-2">
+          <Link href="/shipments" className="hover:text-primary transition">
             Danh sách Lô hàng
           </Link>
           <span>/</span>
-          <span className="text-white">Tạo mới</span>
+          <span className="text-title font-medium">Tạo mới</span>
         </div>
-        <h1 className="text-2xl font-bold text-white tracking-tight">
-          Tạo Lô Hàng & Báo Giá Vận Tải
+        <h1 className="text-2xl font-bold text-title tracking-tight">
+          Tạo Lô Hàng LCL & Báo Giá Vận Tải
         </h1>
-        <p className="text-sm text-slate-400 mt-1">
-          Quy trình 4 bước: Chọn tuyến → Đóng gói kiện hàng → Báo giá tự động Hg → Xác nhận
+        <p className="text-xs sm:text-sm text-text-secondary mt-1">
+          Quy trình 4 bước: Chọn tuyến → Đóng gói kiện hàng → Báo giá tự động Hg → Xác nhận gửi
         </p>
       </div>
 
-      <div className="grid grid-cols-4 gap-2 border-b border-slate-800 pb-4">
-        {[
-          { step: 1, title: '1. Tuyến Đường' },
-          { step: 2, title: '2. Kiện Hàng' },
-          { step: 3, title: '3. Báo Giá & Phụ Phí' },
-          { step: 4, title: '4. Xác Nhận' },
-        ].map((s) => (
-          <button
-            key={s.step}
-            onClick={() => {
-              if (s.step < currentStep || (s.step === 2 && selectedLaneId) || (s.step === 3 && selectedLaneId && packages.length > 0)) {
-                setCurrentStep(s.step);
-              }
-            }}
-            className={`text-left py-2 px-3 rounded-lg text-xs font-semibold transition ${
-              currentStep === s.step
-                ? 'bg-blue-600 text-white shadow-sm'
-                : currentStep > s.step
-                ? 'bg-slate-900 text-blue-400 border border-blue-900/60'
-                : 'bg-slate-900 text-slate-500'
-            }`}
-          >
-            {s.title}
-          </button>
-        ))}
-      </div>
+      {/* Stepper Header */}
+      <Card className="p-4 bg-surface-card border-border-subtle shadow-sm">
+        <Stepper
+          currentStep={currentStep}
+          totalSteps={4}
+          stepTitles={['Tuyến Vận Chuyển', 'Danh Sách Kiện Hàng', 'Báo Giá & Phụ Phí Hg', 'Xác Nhận Đơn Hàng']}
+        />
+      </Card>
 
+      {/* Step 1: Lane Selection */}
       {currentStep === 1 && (
         <div className="space-y-6">
           <div>
-            <h2 className="text-lg font-bold text-white">Bước 1: Chọn Tuyến Vận Chuyển</h2>
-            <p className="text-xs text-slate-400 mt-1">
+            <h2 className="text-base font-bold text-title">Bước 1: Chọn Tuyến Vận Chuyển</h2>
+            <p className="text-xs text-text-secondary mt-0.5">
               Giá cước CBM, trọng lượng và phụ phí hình học được niêm yết theo từng tuyến
             </p>
           </div>
 
           {isLoadingLanes ? (
-            <div className="p-8 text-center text-slate-400 text-sm">Đang tải danh sách tuyến...</div>
+            <div className="p-8 text-center text-text-secondary text-sm">Đang tải danh sách tuyến...</div>
           ) : !lanes?.length ? (
-            <div className="p-8 text-center text-slate-400 text-sm">Không có tuyến nào đang hoạt động</div>
+            <div className="p-8 text-center text-text-secondary text-sm">Không có tuyến nào đang hoạt động</div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {lanes.map((lane) => {
@@ -348,44 +360,45 @@ export default function NewShipmentPage() {
                   <div
                     key={lane.id}
                     onClick={() => setSelectedLaneId(lane.id)}
-                    className={`p-5 rounded-xl border transition cursor-pointer ${
+                    className={`p-5 rounded-2xl border transition-all duration-150 cursor-pointer ${
                       isSelected
-                        ? 'bg-blue-950/40 border-blue-500 shadow-lg shadow-blue-500/10'
-                        : 'bg-slate-900/80 border-slate-800 hover:border-slate-700 hover:bg-slate-900'
+                        ? 'bg-primary-tint border-primary shadow-sm ring-2 ring-primary/20'
+                        : 'bg-surface-card border-border-subtle hover:border-slate-300 hover:bg-surface-app'
                     }`}
                   >
                     <div className="flex items-start justify-between">
                       <div>
-                        <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-blue-900/60 text-blue-300 border border-blue-700/50">
+                        <span className="font-mono-numeric text-xs font-bold px-2 py-0.5 rounded-md bg-blue-100 text-primary border border-blue-200">
                           {lane.code}
                         </span>
-                        <h3 className="text-base font-bold text-white mt-2">{lane.name}</h3>
-                        <p className="text-xs text-slate-400 mt-0.5">
+                        <h3 className="text-base font-bold text-title mt-2">{lane.name}</h3>
+                        <p className="text-xs text-text-secondary mt-0.5 flex items-center gap-1">
+                          <MapPin className="h-3 w-3 text-text-muted" />
                           {lane.origin} → {lane.destination}
                         </p>
                       </div>
-                      <div className="h-5 w-5 rounded-full border border-slate-600 flex items-center justify-center">
-                        {isSelected && <div className="h-3 w-3 rounded-full bg-blue-500" />}
+                      <div className={`h-5 w-5 rounded-full border flex items-center justify-center ${isSelected ? 'border-primary' : 'border-border-input'}`}>
+                        {isSelected && <div className="h-3 w-3 rounded-full bg-primary" />}
                       </div>
                     </div>
 
                     {config && (
-                      <div className="mt-4 pt-3 border-t border-slate-800/80 grid grid-cols-3 gap-2 text-xs">
+                      <div className="mt-4 pt-3 border-t border-border-subtle grid grid-cols-3 gap-2 text-xs">
                         <div>
-                          <div className="text-[10px] text-slate-400">Giá CBM</div>
-                          <div className="font-mono font-semibold text-white mt-0.5">
+                          <div className="text-[10px] text-text-secondary">Giá CBM</div>
+                          <div className="font-mono-numeric font-bold text-title mt-0.5">
                             {formatVnd(config.cbmRate)}
                           </div>
                         </div>
                         <div>
-                          <div className="text-[10px] text-slate-400">Giá 1 kg</div>
-                          <div className="font-mono font-semibold text-white mt-0.5">
+                          <div className="text-[10px] text-text-secondary">Giá 1 kg</div>
+                          <div className="font-mono-numeric font-bold text-title mt-0.5">
                             {formatVnd(config.weightRateKg)}
                           </div>
                         </div>
                         <div>
-                          <div className="text-[10px] text-slate-400">Phí cố định</div>
-                          <div className="font-mono font-semibold text-white mt-0.5">
+                          <div className="text-[10px] text-text-secondary">Phí cố định</div>
+                          <div className="font-mono-numeric font-bold text-title mt-0.5">
                             {formatVnd(config.fixedFee)}
                           </div>
                         </div>
@@ -397,35 +410,41 @@ export default function NewShipmentPage() {
             </div>
           )}
 
+          {/* Desktop in-flow button */}
           <div className="flex justify-end pt-4">
-            <button
+            <Button
+              variant="primary"
+              size="md"
               onClick={() => setCurrentStep(2)}
               disabled={!selectedLaneId}
-              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold text-sm transition"
+              rightIcon={<ArrowRight className="h-4 w-4" />}
             >
-              Tiếp tục <ArrowRight className="h-4 w-4" />
-            </button>
+              Tiếp tục sang Bước 2
+            </Button>
           </div>
         </div>
       )}
+
+      {/* Step 2: Packages List */}
       {currentStep === 2 && (
         <div className="space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h2 className="text-lg font-bold text-white">Bước 2: Nhập Danh Sách Kiện Hàng</h2>
-              <p className="text-xs text-slate-400 mt-1">
+              <h2 className="text-base font-bold text-title">Bước 2: Nhập Danh Sách Kiện Hàng</h2>
+              <p className="text-xs text-text-secondary mt-0.5">
                 Nhập kích thước (mm), khối lượng (g) và các cờ hình học xếp dỡ
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <button
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={handleDownloadTemplate}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-white text-xs font-medium transition"
+                leftIcon={<FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />}
               >
-                <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400" />
                 Tải file mẫu Excel
-              </button>
-              <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold cursor-pointer transition">
+              </Button>
+              <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold cursor-pointer transition shadow-sm">
                 <UploadCloud className="h-3.5 w-3.5" />
                 {isUploading ? 'Đang đọc...' : 'Tải lên Excel'}
                 <input
@@ -439,12 +458,12 @@ export default function NewShipmentPage() {
           </div>
 
           {excelErrors.length > 0 && (
-            <div className="p-4 rounded-xl bg-red-950/60 border border-red-800 text-xs text-red-200 space-y-2">
-              <div className="font-bold flex items-center gap-2 text-red-300">
-                <AlertTriangle className="h-4 w-4 text-red-400" />
+            <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 space-y-2">
+              <div className="font-bold flex items-center gap-2 text-rose-800">
+                <AlertTriangle className="h-4 w-4 text-rose-600" />
                 Phát hiện {excelErrors.length} lỗi trong file Excel tải lên:
               </div>
-              <ul className="list-disc list-inside space-y-1 text-red-300/90 pl-1">
+              <ul className="list-disc list-inside space-y-1 pl-1">
                 {excelErrors.slice(0, 5).map((err, idx) => (
                   <li key={idx}>
                     Dòng {err.row} ({err.column}): {err.message}
@@ -457,10 +476,10 @@ export default function NewShipmentPage() {
             </div>
           )}
 
-          <div className="bg-slate-900/80 border border-slate-800 rounded-xl overflow-hidden">
+          <Card className="overflow-hidden bg-surface-card border-border-subtle shadow-sm">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-300">
-                <thead className="bg-slate-950/80 text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-800 font-semibold">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-surface-app text-[11px] uppercase tracking-wider text-text-secondary border-b border-border-subtle font-semibold">
                   <tr>
                     <th className="px-3 py-3">Mã Kiện</th>
                     <th className="px-3 py-3">Dài (mm)</th>
@@ -468,79 +487,115 @@ export default function NewShipmentPage() {
                     <th className="px-3 py-3">Cao (mm)</th>
                     <th className="px-3 py-3">Khối Lượng (g)</th>
                     <th className="px-3 py-3 text-center">Dễ Vỡ (1.15)</th>
-                    <th className="px-3 py-3 text-center">Không Chồng (1.30)</th>
+                    <th className="px-3 py-3 text-center">Cấm Chồng (1.30)</th>
                     <th className="px-3 py-3">Loại Kiện</th>
                     <th className="px-3 py-3 text-center">Xóa</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/60">
+                <tbody className="divide-y border-border-subtle">
                   {packages.map((pkg) => (
-                    <tr key={pkg.id} className="hover:bg-slate-800/30 transition">
-                      <td className="px-3 py-2">
+                    <tr key={pkg.id} className="hover:bg-surface-app transition-colors">
+                      <td className="px-3 py-2.5 align-top">
                         <input
                           type="text"
                           value={pkg.packageCode}
                           onChange={(e) => handleUpdatePackage(pkg.id, 'packageCode', e.target.value)}
-                          className="w-24 px-2 py-1 rounded bg-slate-800 border border-slate-700 text-white font-mono text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          className="w-24 px-2 py-1.5 rounded-lg bg-surface-card border border-border-input text-title font-mono-numeric text-xs focus:border-primary focus:outline-none"
                         />
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2.5 align-top">
                         <input
                           type="number"
                           value={pkg.lengthMm === 0 ? '' : pkg.lengthMm}
                           placeholder="0"
                           onChange={(e) => handleUpdatePackage(pkg.id, 'lengthMm', e.target.value === '' ? 0 : Number(e.target.value))}
-                          className="w-20 px-2 py-1 rounded bg-slate-800 border border-slate-700 text-white font-mono text-xs text-right focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          className={`w-20 px-2 py-1.5 rounded-lg border text-title font-mono-numeric text-xs text-right focus:outline-none transition ${
+                            pkg.lengthMm <= 0
+                              ? 'border-rose-400 bg-rose-50/50 focus:border-rose-500'
+                              : 'bg-surface-card border-border-input focus:border-primary'
+                          }`}
                         />
+                        {pkg.lengthMm <= 0 && (
+                          <div className="text-[10px] text-rose-600 font-medium text-right mt-0.5 whitespace-nowrap">
+                            Phải &gt; 0
+                          </div>
+                        )}
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2.5 align-top">
                         <input
                           type="number"
                           value={pkg.widthMm === 0 ? '' : pkg.widthMm}
                           placeholder="0"
                           onChange={(e) => handleUpdatePackage(pkg.id, 'widthMm', e.target.value === '' ? 0 : Number(e.target.value))}
-                          className="w-20 px-2 py-1 rounded bg-slate-800 border border-slate-700 text-white font-mono text-xs text-right focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          className={`w-20 px-2 py-1.5 rounded-lg border text-title font-mono-numeric text-xs text-right focus:outline-none transition ${
+                            pkg.widthMm <= 0
+                              ? 'border-rose-400 bg-rose-50/50 focus:border-rose-500'
+                              : 'bg-surface-card border-border-input focus:border-primary'
+                          }`}
                         />
+                        {pkg.widthMm <= 0 && (
+                          <div className="text-[10px] text-rose-600 font-medium text-right mt-0.5 whitespace-nowrap">
+                            Phải &gt; 0
+                          </div>
+                        )}
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2.5 align-top">
                         <input
                           type="number"
                           value={pkg.heightMm === 0 ? '' : pkg.heightMm}
                           placeholder="0"
                           onChange={(e) => handleUpdatePackage(pkg.id, 'heightMm', e.target.value === '' ? 0 : Number(e.target.value))}
-                          className="w-20 px-2 py-1 rounded bg-slate-800 border border-slate-700 text-white font-mono text-xs text-right focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          className={`w-20 px-2 py-1.5 rounded-lg border text-title font-mono-numeric text-xs text-right focus:outline-none transition ${
+                            pkg.heightMm <= 0
+                              ? 'border-rose-400 bg-rose-50/50 focus:border-rose-500'
+                              : 'bg-surface-card border-border-input focus:border-primary'
+                          }`}
                         />
+                        {pkg.heightMm <= 0 && (
+                          <div className="text-[10px] text-rose-600 font-medium text-right mt-0.5 whitespace-nowrap">
+                            Phải &gt; 0
+                          </div>
+                        )}
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2.5 align-top">
                         <input
                           type="number"
                           value={pkg.weightGrams === 0 ? '' : pkg.weightGrams}
                           placeholder="0"
                           onChange={(e) => handleUpdatePackage(pkg.id, 'weightGrams', e.target.value === '' ? 0 : Number(e.target.value))}
-                          className="w-24 px-2 py-1 rounded bg-slate-800 border border-slate-700 text-white font-mono text-xs text-right focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          className={`w-24 px-2 py-1.5 rounded-lg border text-title font-mono-numeric text-xs text-right focus:outline-none transition ${
+                            pkg.weightGrams <= 0
+                              ? 'border-rose-400 bg-rose-50/50 focus:border-rose-500'
+                              : 'bg-surface-card border-border-input focus:border-primary'
+                          }`}
                         />
+                        {pkg.weightGrams <= 0 && (
+                          <div className="text-[10px] text-rose-600 font-medium text-right mt-0.5 whitespace-nowrap">
+                            Phải &gt; 0
+                          </div>
+                        )}
                       </td>
-                      <td className="px-3 py-2 text-center">
+                      <td className="px-3 py-2.5 text-center align-top">
                         <input
                           type="checkbox"
                           checked={pkg.isFragile}
                           onChange={(e) => handleUpdatePackage(pkg.id, 'isFragile', e.target.checked)}
-                          className="h-4 w-4 rounded bg-slate-800 border-slate-700 text-blue-600"
+                          className="h-4 w-4 mt-2 rounded border-border-input text-primary focus:ring-primary/20"
                         />
                       </td>
-                      <td className="px-3 py-2 text-center">
+                      <td className="px-3 py-2.5 text-center align-top">
                         <input
                           type="checkbox"
                           checked={pkg.noStack}
                           onChange={(e) => handleUpdatePackage(pkg.id, 'noStack', e.target.checked)}
-                          className="h-4 w-4 rounded bg-slate-800 border-slate-700 text-amber-600"
+                          className="h-4 w-4 mt-2 rounded border-border-input text-amber-600 focus:ring-amber-500/20"
                         />
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2.5 align-top">
                         <select
                           value={pkg.packageType}
                           onChange={(e) => handleUpdatePackage(pkg.id, 'packageType', e.target.value as PackageType)}
-                          className="px-2 py-1 rounded bg-slate-800 border border-slate-700 text-white text-xs"
+                          className="px-2 py-1.5 rounded-lg bg-surface-card border border-border-input text-title text-xs focus:border-primary focus:outline-none"
                         >
                           <option value={PackageType.BOX}>BOX</option>
                           <option value={PackageType.PALLET}>PALLET</option>
@@ -548,11 +603,11 @@ export default function NewShipmentPage() {
                           <option value={PackageType.OTHER}>OTHER</option>
                         </select>
                       </td>
-                      <td className="px-3 py-2 text-center">
+                      <td className="px-3 py-2.5 text-center align-top">
                         <button
                           onClick={() => handleRemovePackageRow(pkg.id)}
                           disabled={packages.length <= 1}
-                          className="text-slate-500 hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed transition"
+                          className="mt-1 text-text-muted hover:text-rose-600 disabled:opacity-30 disabled:cursor-not-allowed transition"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
@@ -563,232 +618,266 @@ export default function NewShipmentPage() {
               </table>
             </div>
 
-            <div className="p-3 bg-slate-950/50 border-t border-slate-800 flex justify-between items-center text-xs">
+            <div className="p-3.5 bg-surface-app border-t border-border-subtle flex justify-between items-center text-xs">
               <button
                 onClick={handleAddPackageRow}
-                className="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300 font-semibold transition"
+                className="inline-flex items-center gap-1.5 text-primary hover:text-primary-hover font-semibold transition cursor-pointer"
               >
                 <Plus className="h-4 w-4" /> Thêm kiện hàng
               </button>
-              <div className="text-slate-400">
-                Tổng cộng: <span className="font-bold text-white">{packages.length}</span> kiện
+              <div className="text-text-secondary">
+                Tổng cộng: <span className="font-bold text-title font-mono-numeric">{packages.length}</span> kiện
               </div>
             </div>
-          </div>
+          </Card>
 
           {submitError && (
-            <div className="p-3 rounded-lg bg-red-950/60 border border-red-800 text-xs text-red-200">
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700">
               {submitError}
             </div>
           )}
 
+          {!isStep2Valid && (
+            <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-center gap-2 font-medium">
+              <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+              <span>
+                Vui lòng điền đầy đủ kích thước (dài, rộng, cao &gt; 0 mm) và khối lượng (&gt; 0 g) cho tất cả các kiện để tiếp tục xem báo giá.
+              </span>
+            </div>
+          )}
+
+          {/* Desktop in-flow buttons */}
           <div className="flex justify-between pt-4">
-            <button
+            <Button
+              variant="outline"
+              size="md"
               onClick={() => setCurrentStep(1)}
-              className="inline-flex items-center gap-2 px-5 py-2 rounded-lg bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 font-semibold text-xs transition"
+              leftIcon={<ArrowLeft className="h-4 w-4" />}
             >
-              <ArrowLeft className="h-4 w-4" /> Quay lại Bước 1
-            </button>
-            <button
+              Quay lại Bước 1
+            </Button>
+            <Button
+              variant="primary"
+              size="md"
               onClick={handleProceedToStep3}
-              disabled={packages.length === 0}
-              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-semibold text-sm transition"
+              disabled={!isStep2Valid}
+              rightIcon={<ArrowRight className="h-4 w-4" />}
             >
-              Xem Báo Giá Trực Tiếp <ArrowRight className="h-4 w-4" />
-            </button>
+              Xem Báo Giá Trực Tiếp
+            </Button>
           </div>
         </div>
       )}
+
+      {/* Step 3: Pricing Preview & Hg Surcharges */}
       {currentStep === 3 && pricingPreview && pricingConfig && (
         <div className="space-y-6">
           <div>
-            <h2 className="text-lg font-bold text-white">Bước 3: Xem Trước Báo Giá & Phụ Phí Hình Học</h2>
-            <p className="text-xs text-slate-400 mt-1">
-              Phép tính 100% số nguyên VNĐ theo công thức P_total = max(V * Pv, W * Pw) * Hg + P_fixed
+            <h2 className="text-base font-bold text-title">Bước 3: Xem Trước Báo Giá & Phụ Phí Hình Học Hg</h2>
+            <p className="text-xs text-text-secondary mt-0.5">
+              Công thức chuẩn hóa: <span className="font-mono-numeric font-semibold">P_total = max(V * Pv, W * Pw) * Hg + P_fixed</span>
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
-              <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                1. Tính Cước Theo Thể Tích
+            <Card className="p-5 bg-surface-card border-border-subtle space-y-2 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
+                1. Tính Theo Thể Tích
               </div>
-              <div className="text-2xl font-mono font-bold text-white">
+              <div className="text-2xl font-mono-numeric font-bold text-title">
                 {formatVnd(pricingPreview.baseVolumeAmount)}
               </div>
-              <div className="text-xs text-slate-400 font-mono">
+              <div className="text-xs text-text-secondary font-mono-numeric">
                 {cbmFromVolumeMm3(pricingPreview.totalVolumeMm3)} m³ × {formatVnd(pricingConfig.cbmRate)}/m³
               </div>
               {pricingPreview.chargeableBasis === 'VOLUME' && (
-                <div className="mt-2 inline-block px-2.5 py-1 rounded bg-sky-950 border border-sky-800 text-sky-300 text-xs font-bold">
+                <div className="mt-2 inline-block px-2.5 py-0.5 rounded-full bg-sky-50 border border-sky-200 text-sky-700 text-xs font-bold">
                   ✓ Thể tích lớn hơn (Áp dụng)
                 </div>
               )}
-            </div>
+            </Card>
 
-            <div className="p-5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
-              <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                2. Tính Cước Theo Trọng Lượng
+            <Card className="p-5 bg-surface-card border-border-subtle space-y-2 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
+                2. Tính Theo Khối Lượng
               </div>
-              <div className="text-2xl font-mono font-bold text-white">
+              <div className="text-2xl font-mono-numeric font-bold text-title">
                 {formatVnd(pricingPreview.baseWeightAmount)}
               </div>
-              <div className="text-xs text-slate-400 font-mono">
+              <div className="text-xs text-text-secondary font-mono-numeric">
                 {kgFromWeightGrams(pricingPreview.totalWeightGrams)} kg × {formatVnd(pricingConfig.weightRateKg)}/kg
               </div>
               {pricingPreview.chargeableBasis === 'WEIGHT' && (
-                <div className="mt-2 inline-block px-2.5 py-1 rounded bg-emerald-950 border border-emerald-800 text-emerald-300 text-xs font-bold">
+                <div className="mt-2 inline-block px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold">
                   ✓ Trọng lượng lớn hơn (Áp dụng)
                 </div>
               )}
-            </div>
+            </Card>
 
-            <div className="p-5 rounded-xl bg-blue-950/30 border border-blue-800/80 space-y-2">
-              <div className="text-xs font-semibold uppercase tracking-wider text-blue-300">
-                3. Tổng Cước Thanh Toán
+            <Card className="p-5 bg-primary-tint border-blue-200 space-y-2 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wider text-primary">
+                3. Tổng Cước Ước Tính
               </div>
-              <div className="text-3xl font-mono font-black text-emerald-400">
+              <div className="text-3xl font-mono-numeric font-black text-emerald-600">
                 {formatVnd(pricingPreview.totalAmount)}
               </div>
-              <div className="text-xs text-slate-300">
-                Đã bao gồm phụ phí hình học và phí cố định
+              <div className="text-xs text-text-secondary">
+                Đã bao gồm phụ phí hình học và phí xử lý cố định
               </div>
-            </div>
+            </Card>
           </div>
 
-          <div className="p-5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-4">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <Info className="h-4 w-4 text-blue-400" />
+          <Card className="p-5 bg-surface-card border-border-subtle shadow-sm space-y-4">
+            <h3 className="text-sm font-bold text-title flex items-center gap-2">
+              <Info className="h-4 w-4 text-primary" />
               Chi Tiết Phụ Phí Hình Học & Xếp Dỡ (Hệ số Hg)
             </h3>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
               <div
-                className={`p-3.5 rounded-lg border transition ${
+                className={`p-3.5 rounded-xl border transition ${
                   pricingPreview.hgFactorBps === pricingConfig.standardSurchargeBps
-                    ? 'bg-blue-950/60 border-blue-600 text-white'
-                    : 'bg-slate-950/40 border-slate-800 text-slate-400'
+                    ? 'bg-blue-50 border-primary text-title'
+                    : 'bg-surface-app border-border-subtle text-text-secondary'
                 }`}
               >
                 <div className="font-bold">Mức 1: Tiêu Chuẩn (1.00)</div>
-                <div className="text-[11px] mt-1">Kiện hộp chữ nhật chuẩn, có thể xếp chồng bình thường</div>
+                <div className="text-[11px] mt-1 text-text-secondary">Kiện hộp chữ nhật chuẩn, có thể xếp chồng bình thường</div>
               </div>
 
               <div
-                className={`p-3.5 rounded-lg border transition ${
+                className={`p-3.5 rounded-xl border transition ${
                   pricingPreview.hgFactorBps === pricingConfig.irregularSurchargeBps
-                    ? 'bg-amber-950/60 border-amber-600 text-white'
-                    : 'bg-slate-950/40 border-slate-800 text-slate-400'
+                    ? 'bg-amber-50 border-amber-500 text-title'
+                    : 'bg-surface-app border-border-subtle text-text-secondary'
                 }`}
               >
-                <div className="font-bold">Mức 2: Dễ vỡ / Tỉ lệ lệch (1.15)</div>
-                <div className="text-[11px] mt-1">Kiện cờ dễ vỡ hoặc tỉ lệ cạnh max/min &gt; {pricingConfig.maxEdgeRatioThreshold}</div>
+                <div className="font-bold text-amber-700">Mức 2: Dễ vỡ / Tỉ lệ lệch (1.15)</div>
+                <div className="text-[11px] mt-1 text-text-secondary">Kiện cờ dễ vỡ hoặc tỉ lệ cạnh max/min &gt; {pricingConfig.maxEdgeRatioThreshold}</div>
               </div>
 
               <div
-                className={`p-3.5 rounded-lg border transition ${
+                className={`p-3.5 rounded-xl border transition ${
                   pricingPreview.hgFactorBps === pricingConfig.noStackSurchargeBps
-                    ? 'bg-red-950/60 border-red-600 text-white'
-                    : 'bg-slate-950/40 border-slate-800 text-slate-400'
+                    ? 'bg-rose-50 border-rose-500 text-title'
+                    : 'bg-surface-app border-border-subtle text-text-secondary'
                 }`}
               >
-                <div className="font-bold">Mức 3: Cấm xếp chồng (1.30)</div>
-                <div className="text-[11px] mt-1">Chiếm trọn cột không gian container theo phương thẳng đứng</div>
+                <div className="font-bold text-rose-700">Mức 3: Cấm xếp chồng (1.30)</div>
+                <div className="text-[11px] mt-1 text-text-secondary">Chiếm trọn cột không gian container theo phương đứng</div>
               </div>
             </div>
 
-            <div className="p-3.5 rounded-lg bg-slate-950/60 border border-slate-800 text-xs text-slate-300 space-y-1">
+            <div className="p-3.5 rounded-xl bg-surface-app border border-border-subtle text-xs text-text-secondary space-y-1">
               <div>
-                Hệ số Hg áp dụng cho toàn lô: <span className="font-bold text-white font-mono">{(pricingPreview.hgFactorBps / 10000).toFixed(2)}</span> ({pricingPreview.hgReason})
+                Hệ số Hg áp dụng: <span className="font-bold text-title font-mono-numeric">{(pricingPreview.hgFactorBps / 10000).toFixed(2)}</span> ({pricingPreview.hgReason})
               </div>
               <div>
-                Tiền phụ phí hình học: <span className="font-bold text-amber-400 font-mono">+{formatVnd(pricingPreview.surchargeFee)}</span>
+                Phụ phí hình học: <span className="font-bold text-amber-600 font-mono-numeric">+{formatVnd(pricingPreview.surchargeFee)}</span>
               </div>
               <div>
-                Phí xử lý cố định: <span className="font-bold text-white font-mono">+{formatVnd(pricingPreview.fixedFee)}</span>
+                Phí cố định: <span className="font-bold text-title font-mono-numeric">+{formatVnd(pricingPreview.fixedFee)}</span>
               </div>
             </div>
-          </div>
+          </Card>
 
+          {/* Desktop in-flow buttons */}
           <div className="flex justify-between pt-4">
-            <button
+            <Button
+              variant="outline"
+              size="md"
               onClick={() => setCurrentStep(2)}
-              className="inline-flex items-center gap-2 px-5 py-2 rounded-lg bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 font-semibold text-xs transition"
+              leftIcon={<ArrowLeft className="h-4 w-4" />}
             >
-              <ArrowLeft className="h-4 w-4" /> Sửa Kiện Hàng
-            </button>
-            <button
+              Sửa Kiện Hàng
+            </Button>
+            <Button
+              variant="primary"
+              size="md"
               onClick={() => setCurrentStep(4)}
-              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm transition"
+              rightIcon={<ArrowRight className="h-4 w-4" />}
             >
-              Tiếp tục Xác Nhận <ArrowRight className="h-4 w-4" />
-            </button>
+              Tiếp tục Xác Nhận
+            </Button>
           </div>
         </div>
       )}
 
+      {/* Step 4: Final Confirmation */}
       {currentStep === 4 && pricingPreview && (
         <div className="space-y-6">
           <div>
-            <h2 className="text-lg font-bold text-white">Bước 4: Xác Nhận & Tạo Lô Hàng</h2>
-            <p className="text-xs text-slate-400 mt-1">
+            <h2 className="text-base font-bold text-title">Bước 4: Xác Nhận & Tạo Lô Hàng</h2>
+            <p className="text-xs text-text-secondary mt-0.5">
               Kiểm tra thông tin lần cuối trước khi lưu vào hệ thống
             </p>
           </div>
 
           {submitError && (
-            <div className="p-4 rounded-xl bg-red-950/60 border border-red-800 text-xs text-red-200">
+            <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700">
               {submitError}
             </div>
           )}
 
-          <div className="p-6 rounded-xl bg-slate-900/80 border border-slate-800 space-y-4">
+          <Card className="p-6 bg-surface-card border-border-subtle shadow-sm space-y-6">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
-              <div>
-                <span className="text-slate-400">Tuyến đường:</span>
-                <div className="font-bold text-white mt-0.5">{selectedLane?.name}</div>
+              <div className="p-3.5 rounded-xl bg-surface-app border border-border-subtle">
+                <span className="text-text-secondary">Tuyến đường:</span>
+                <div className="font-bold text-title mt-1">{selectedLane?.name}</div>
               </div>
-              <div>
-                <span className="text-slate-400">Tổng số kiện:</span>
-                <div className="font-bold text-white mt-0.5">{packages.length} kiện</div>
+              <div className="p-3.5 rounded-xl bg-surface-app border border-border-subtle">
+                <span className="text-text-secondary">Tổng số kiện:</span>
+                <div className="font-bold text-title mt-1 font-mono-numeric">{packages.length} kiện</div>
               </div>
-              <div>
-                <span className="text-slate-400">Tổng thể tích:</span>
-                <div className="font-bold text-white mt-0.5">{cbmFromVolumeMm3(pricingPreview.totalVolumeMm3)} m³</div>
+              <div className="p-3.5 rounded-xl bg-surface-app border border-border-subtle">
+                <span className="text-text-secondary">Tổng thể tích:</span>
+                <div className="font-bold text-title mt-1 font-mono-numeric">{cbmFromVolumeMm3(pricingPreview.totalVolumeMm3)} m³</div>
               </div>
-              <div>
-                <span className="text-slate-400">Tổng khối lượng:</span>
-                <div className="font-bold text-white mt-0.5">{kgFromWeightGrams(pricingPreview.totalWeightGrams)} kg</div>
+              <div className="p-3.5 rounded-xl bg-surface-app border border-border-subtle">
+                <span className="text-text-secondary">Tổng khối lượng:</span>
+                <div className="font-bold text-title mt-1 font-mono-numeric">{kgFromWeightGrams(pricingPreview.totalWeightGrams)} kg</div>
               </div>
             </div>
 
-            <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
+            <div className="pt-4 border-t border-border-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <div className="text-xs text-slate-400">Tổng chi phí vận tải ước tính:</div>
-                <div className="text-2xl font-mono font-black text-emerald-400 mt-0.5">
+                <div className="text-xs text-text-secondary">Tổng chi phí vận tải ước tính:</div>
+                <div className="text-2xl sm:text-3xl font-mono-numeric font-black text-emerald-600 mt-1">
                   {formatVnd(pricingPreview.totalAmount)}
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <button
-                  type="button"
+                <Button
+                  variant="secondary"
+                  size="md"
                   disabled={isSubmitting}
                   onClick={() => handleCreateShipment(false)}
-                  className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition cursor-pointer"
                 >
                   Lưu Bản Nháp
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
+                  variant="primary"
+                  size="md"
                   disabled={isSubmitting}
+                  isLoading={isSubmitting}
                   onClick={() => handleCreateShipment(true)}
-                  className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-semibold text-sm shadow-lg shadow-blue-500/20 transition cursor-pointer"
+                  leftIcon={<CheckCircle2 className="h-4 w-4" />}
                 >
-                  <CheckCircle2 className="h-4 w-4" />
-                  {isSubmitting ? 'Đang khởi tạo...' : 'Xác Nhận & Gửi Lô Hàng'}
-                </button>
+                  Xác Nhận & Gửi Lô Hàng
+                </Button>
               </div>
             </div>
+          </Card>
+
+          <div className="flex justify-start">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentStep(3)}
+              leftIcon={<ArrowLeft className="h-3.5 w-3.5" />}
+            >
+              Quay lại Báo Giá
+            </Button>
           </div>
         </div>
       )}

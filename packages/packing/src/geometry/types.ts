@@ -9,6 +9,7 @@ export interface PackageItem {
   id: string;
   sku?: string;
   name?: string;
+  companyId?: string;
   lengthMm: number;
   widthMm: number;
   heightMm: number;
@@ -52,7 +53,45 @@ export interface CenterOfGravity {
   zPercentage: number;
 }
 
+export type PackingStrategy = 'MAX_VOLUME' | 'CONSIGNEE_GROUPED' | 'LIFO_PRIORITY';
+
+export type QualitativeRating = 'VERY_GOOD' | 'GOOD' | 'FAIR' | 'AVERAGE' | 'POOR';
+
+export interface CriterionResult {
+  id: string;
+  name: string;
+  rawScore: number;
+  unit: string;
+  rating: QualitativeRating;
+  ratingLabel: string;
+  description: string;
+  alertLevel?: 'NORMAL' | 'WARNING' | 'CRITICAL';
+}
+
+export interface StrategyEvaluation {
+  strategy: PackingStrategy;
+  strategyName: string;
+  strategyDescription: string;
+  placedCount: number;
+  totalCount: number;
+  unplacedCount: number;
+  placedPercentage: number;
+  unplacedAlert: 'NONE' | 'WARNING' | 'CRITICAL';
+  unplacedNote: string;
+  criteria: {
+    volumeUtilization: CriterionResult;
+    weightUtilization: CriterionResult;
+    cogDeviation: CriterionResult;
+    stabilityScore: CriterionResult;
+    cargoCompatibility: CriterionResult;
+    lifoCompliance: CriterionResult;
+    consigneeAccessibility: CriterionResult;
+  };
+  overallScore: number;
+}
+
 export interface PackingOptions {
+  strategy?: PackingStrategy; // Default MAX_VOLUME
   timeBudgetMs?: number; // Watchdog timeout in ms (default 8000)
   seed?: number; // Deterministic seed (if not provided, computed from input fingerprint)
   maxEvaluations?: number; // Fixed iteration budget (default 8)
@@ -61,6 +100,8 @@ export interface PackingOptions {
 }
 
 export interface PackingResult {
+  strategy?: PackingStrategy;
+  evaluation?: StrategyEvaluation;
   fillRateBps: number; // e.g. 9250 = 92.50%
   centerOfGravity: CenterOfGravity;
   placedPackages: PackedPlacement[];
@@ -86,5 +127,11 @@ export interface PackingResult {
     payloadExceeded: number;
     dimensionsExceeded: number;
   };
+}
+
+export interface MultiStrategyPackingResult {
+  strategies: Record<PackingStrategy, PackingResult>;
+  recommendedStrategy: PackingStrategy;
+  executionTimeMs: number;
 }
 

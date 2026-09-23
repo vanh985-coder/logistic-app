@@ -1,5 +1,7 @@
 'use client';
 
+import React from 'react';
+import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { fetchApi } from '../lib/api-client';
 import { Activity, Database, Server, RefreshCw, Layers, ShieldCheck, Box } from 'lucide-react';
@@ -52,36 +54,39 @@ export default function WalkingSkeletonPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Link
+              href="/login"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-primary text-white hover:bg-primary-hover shadow-sm transition"
+            >
+              Đăng nhập
+            </Link>
+            <Link
+              href="/register"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-surface-card text-title border border-border-input hover:bg-surface-hover shadow-sm transition"
+            >
+              Đăng ký
+            </Link>
+            <Link
+              href="/shipments"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-surface-card text-title border border-border-input hover:bg-surface-hover shadow-sm transition"
+            >
+              Lô hàng LCL
+            </Link>
+            <Link
+              href="/match-groups"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-surface-card text-title border border-border-input hover:bg-surface-hover shadow-sm transition"
+            >
+              Nhóm ghép Container
+            </Link>
             <button
               onClick={() => refetch()}
               disabled={isFetching}
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium bg-secondary text-foreground hover:bg-muted border border-border transition-colors disabled:opacity-50"
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium bg-surface-subtle text-text-secondary hover:text-title hover:bg-surface-hover border border-border-subtle transition-colors disabled:opacity-50"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin' : ''}`} />
-              Làm mới trạng thái
+              Làm mới
             </button>
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-card border border-border text-xs font-mono">
-              <span className={`w-2 h-2 rounded-full ${
-                data?.status === 'ok'
-                  ? 'bg-status-completed animate-pulse'
-                  : data?.status === 'degraded'
-                  ? 'bg-status-pending'
-                  : isLoading
-                  ? 'bg-amber-400 animate-pulse'
-                  : 'bg-status-failed'
-              }`} />
-              <span className="text-muted-foreground">Hệ thống:</span>
-              <span className="font-semibold uppercase">
-                {data?.status === 'ok'
-                  ? 'HOẠT ĐỘNG (UP)'
-                  : data?.status === 'degraded'
-                  ? 'SUY GIẢM (DEGRADED)'
-                  : isLoading
-                  ? 'ĐANG KẾT NỐI...'
-                  : 'LỖI (DOWN)'}
-              </span>
-            </div>
           </div>
         </header>
 

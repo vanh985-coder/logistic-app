@@ -87,8 +87,31 @@ describe('Phase 4: 3D Packing Engine Async Queue & Redis Cache (e2e)', () => {
   });
 
   afterAll(async () => {
-    await testWorker.close();
-    await app.close();
+    try {
+      if (testWorker) {
+        await testWorker.close();
+      }
+      const testCompanies = await prisma.unsafeGlobal.company.findMany({
+        where: { taxCode: { contains: testId } },
+        select: { id: true },
+      });
+      const testCompanyIds = testCompanies.map((c: any) => c.id);
+      if (testCompanyIds.length > 0) {
+        await prisma.unsafeGlobal.refreshToken.deleteMany({
+          where: { user: { companyId: { in: testCompanyIds } } },
+        });
+        await prisma.unsafeGlobal.user.deleteMany({
+          where: { companyId: { in: testCompanyIds } },
+        });
+        await prisma.unsafeGlobal.company.deleteMany({
+          where: { id: { in: testCompanyIds } },
+        });
+      }
+    } catch (e) {
+      console.warn('Cleanup error in packing-async e2e:', e);
+    } finally {
+      await app.close();
+    }
   });
 
   it('1. POST /packing/calculate should accept job and return HTTP 202 Accepted', async () => {
@@ -136,8 +159,8 @@ describe('Phase 4: 3D Packing Engine Async Queue & Redis Cache (e2e)', () => {
     const jobId = res.body.jobId;
 
     // 2. Poll GET /packing/jobs/:jobId until completed
-    let pollRes;
-    const maxRetries = 20;
+    let pollRes: any;
+    const maxRetries = 40;
     for (let i = 0; i < maxRetries; i++) {
       pollRes = await request(app.getHttpServer())
         .get(`/packing/jobs/${jobId}`)

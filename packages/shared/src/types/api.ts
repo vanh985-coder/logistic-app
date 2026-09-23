@@ -76,6 +76,11 @@ export interface MatchGroupDto {
     id: string;
     shipmentId: string;
     joinedAt: string;
+    dropOrder?: number | null;
+    deliveryDestination?: string | null;
+    tallyStatus?: string | null;
+    tallyNotes?: string | null;
+    tallyAt?: string | null;
     shipment: {
       id: string;
       trackingCode: string;
@@ -93,6 +98,17 @@ export interface MatchGroupDto {
       weightKg: number;
       totalAmount: string;
       chargeableBasis: string;
+      packages?: Array<{
+        id: string;
+        packageCode: string;
+        lengthMm: number;
+        widthMm: number;
+        heightMm: number;
+        weightGrams: number;
+        volumeMm3: string | bigint;
+        isFragile: boolean;
+        noStack: boolean;
+      }>;
     };
   }>;
   createdAt: string;

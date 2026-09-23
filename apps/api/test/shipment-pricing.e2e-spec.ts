@@ -108,7 +108,37 @@ describe('Shipment & Pricing Engine (e2e)', () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    try {
+      if (laneId) {
+        await prisma.unsafeGlobal.package.deleteMany({
+          where: { shipment: { laneId } },
+        });
+        await prisma.unsafeGlobal.shipment.deleteMany({ where: { laneId } });
+        await prisma.unsafeGlobal.pricingConfig.deleteMany({ where: { laneId } });
+        await prisma.unsafeGlobal.lane.deleteMany({ where: { id: laneId } });
+      }
+
+      const testCompanies = await prisma.unsafeGlobal.company.findMany({
+        where: { taxCode: { contains: testId } },
+        select: { id: true },
+      });
+      const testCompanyIds = testCompanies.map((c: any) => c.id);
+      if (testCompanyIds.length > 0) {
+        await prisma.unsafeGlobal.refreshToken.deleteMany({
+          where: { user: { companyId: { in: testCompanyIds } } },
+        });
+        await prisma.unsafeGlobal.user.deleteMany({
+          where: { companyId: { in: testCompanyIds } },
+        });
+        await prisma.unsafeGlobal.company.deleteMany({
+          where: { id: { in: testCompanyIds } },
+        });
+      }
+    } catch (e) {
+      console.warn('Cleanup error in shipment-pricing e2e:', e);
+    } finally {
+      await app.close();
+    }
   });
 
   describe('1. Lane & PricingConfig Versioning', () => {

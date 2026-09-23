@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Strict Round-Half-Up integer division for positive BigInts:
  * roundDiv(a, b) = floor((a + floor(b / 2)) / b)
  */
@@ -39,8 +39,18 @@ export function calcEdgeRatio(lengthMm: number, widthMm: number, heightMm: numbe
 
 /**
  * Derived display helper: converts volumeMm3 to CBM (m3) string for UI/reporting.
+ * - If volumeMm3 <= 0, returns '0'.
+ * - If volumeMm3 > 0 and < 1,000,000 mm3 (< 0.001 m3), returns '< 0.001'.
+ * - Otherwise returns formatted decimal string with standard precision (default 3).
  */
-export function cbmFromVolumeMm3(volumeMm3: bigint, precision: number = 4): string {
+export function cbmFromVolumeMm3(volumeMm3: bigint, precision: number = 3): string {
+  if (volumeMm3 <= 0n) {
+    return '0';
+  }
+  // 1 m3 = 1_000_000_000 mm3; 0.001 m3 = 1_000_000 mm3
+  if (volumeMm3 < 1_000_000n) {
+    return '< 0.001';
+  }
   const cbm = Number(volumeMm3) / 1_000_000_000;
   return cbm.toFixed(precision);
 }

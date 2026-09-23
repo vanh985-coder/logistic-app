@@ -35,22 +35,29 @@ describe('Authentication & Token Lifecycle (e2e)', () => {
   });
 
   afterAll(async () => {
-    // Cleanup created test records
     try {
-      const user = await prisma.unsafeGlobal.user.findUnique({
-        where: { email: registrationPayload.email.toLowerCase() },
+      const testCompanies = await prisma.unsafeGlobal.company.findMany({
+        where: { taxCode: { contains: testSuffix } },
+        select: { id: true },
       });
-      if (user) {
-        await prisma.unsafeGlobal.company.delete({
-          where: { id: user.companyId },
+      const testCompanyIds = testCompanies.map((c: any) => c.id);
+      if (testCompanyIds.length > 0) {
+        await prisma.unsafeGlobal.refreshToken.deleteMany({
+          where: { user: { companyId: { in: testCompanyIds } } },
+        });
+        await prisma.unsafeGlobal.user.deleteMany({
+          where: { companyId: { in: testCompanyIds } },
+        });
+        await prisma.unsafeGlobal.company.deleteMany({
+          where: { id: { in: testCompanyIds } },
         });
       }
-    } catch {
-      // ignore
-    }
-
-    if (app) {
-      await app.close();
+    } catch (e) {
+      console.warn('Cleanup error in auth e2e:', e);
+    } finally {
+      if (app) {
+        await app.close();
+      }
     }
   });
 
@@ -147,6 +154,7 @@ describe('Authentication & Token Lifecycle (e2e)', () => {
     refreshTokenCookie = cookies.find((c: string) => c.includes('refreshToken='))!;
     expect(refreshTokenCookie).toBeDefined();
     expect(refreshTokenCookie).toContain('HttpOnly');
+    expect(refreshTokenCookie).toMatch(/SameSite=Strict/i);
 
     // Extract raw value for reuse testing
     const match = refreshTokenCookie.match(/refreshToken=([^;]+)/);
@@ -253,5 +261,32 @@ describe('Authentication & Token Lifecycle (e2e)', () => {
     const setCookie = logoutRes.headers['set-cookie'] as unknown as string[];
     const clearedCookie = setCookie.find((c) => c.includes('refreshToken=;'));
     expect(clearedCookie).toBeDefined();
+  });
+
+  it('8. TUNNEL_MODE: should set SameSite=None and Secure when TUNNEL_MODE=true', async () => {
+    const originalTunnelMode = process.env.TUNNEL_MODE;
+    process.env.TUNNEL_MODE = 'true';
+    try {
+      const res = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({
+          email: registrationPayload.email,
+          password: registrationPayload.password,
+        })
+        .expect(200);
+
+      const cookies = res.headers['set-cookie'] as unknown as string[];
+      const cookie = cookies.find((c: string) => c.includes('refreshToken='));
+      expect(cookie).toBeDefined();
+      expect(cookie).toMatch(/HttpOnly/i);
+      expect(cookie).toMatch(/SameSite=None/i);
+      expect(cookie).toMatch(/Secure/i);
+    } finally {
+      if (originalTunnelMode !== undefined) {
+        process.env.TUNNEL_MODE = originalTunnelMode;
+      } else {
+        delete process.env.TUNNEL_MODE;
+      }
+    }
   });
 });

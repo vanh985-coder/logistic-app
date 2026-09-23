@@ -39,6 +39,11 @@ async function bootstrap() {
         'http://[::1]:3000',
         /^http:\/\/localhost:\d+$/,
         /^http:\/\/127\.0\.0\.1:\d+$/,
+        /^https:\/\/.*\.ngrok-free\.app$/,
+        /^https:\/\/.*\.ngrok-free\.dev$/,
+        /^https:\/\/.*\.ngrok\.app$/,
+        /^https:\/\/.*\.ngrok\.dev$/,
+        /^https:\/\/.*\.ngrok\.io$/,
       ];
 
   app.enableCors({
@@ -53,7 +58,9 @@ async function bootstrap() {
 
   const port = process.env.PORT || 3001;
   await app.listen(port);
-  logger.log(`LOGIX-3D API Server running on port ${port} [NODE_ENV=${process.env.NODE_ENV || 'development'}]`);
+  logger.log(
+    `LOGIX-3D API Server running on port ${port} [NODE_ENV=${process.env.NODE_ENV || 'development'}] [TUNNEL_MODE=${process.env.TUNNEL_MODE === 'true'}]`,
+  );
 }
 
 bootstrap().catch((err) => {

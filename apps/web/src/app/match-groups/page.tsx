@@ -5,9 +5,17 @@ import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchApi } from '@/lib/api-client';
 import { MatchGroupDto, MatchGroupStatus } from '@logix/shared';
-import { Layers, Sparkles, Box, AlertCircle, Clock } from 'lucide-react';
+import { Layers, Sparkles, Box, AlertCircle, Clock, X } from 'lucide-react';
+import { Button, StatusBadge, Card, EmptyState } from '@/components/ui';
+import { useAuth } from '@/contexts/auth-context';
 
 export default function MatchGroupsPage() {
+  const { user } = useAuth();
+  const canManageGroup =
+    user?.role === 'FWD_ADMIN' ||
+    user?.role === 'FWD_OPERATOR' ||
+    user?.role === 'PLATFORM_ADMIN' ||
+    user?.role === 'ADMIN';
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -75,41 +83,49 @@ export default function MatchGroupsPage() {
   const groups = data?.items ?? [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 font-sans">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white">
-            Kế Hoạch Ghép Hàng LCL & Container (Consolidation)
+          <h1 className="text-2xl font-bold tracking-tight text-title flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+              <Layers className="h-5 w-5" />
+            </div>
+            Kế Hoạch Ghép Hàng LCL & Container
           </h1>
-          <p className="text-sm text-slate-400 mt-1">
-            Tổng hợp các lô hàng cùng tuyến, tự động tính toán dung tích vỏ cont và tối ưu phân bổ tải trọng.
+          <p className="text-xs sm:text-sm text-text-secondary mt-1">
+            Gom các lô hàng cùng tuyến, tối ưu tỷ lệ lấp đầy thể tích CBM và phân bổ tải trọng container
           </p>
         </div>
 
-        <button
-          onClick={() => proposeMutation.mutate()}
-          disabled={proposeMutation.isPending}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition shadow-lg shadow-blue-500/20 disabled:opacity-50 cursor-pointer"
-        >
-          <Sparkles className="h-4 w-4" />
-          {proposeMutation.isPending ? 'Đang chạy thuật toán...' : 'Đề xuất ghép hàng tự động'}
-        </button>
+        {canManageGroup && (
+          <Button
+            variant="primary"
+            size="md"
+            onClick={() => proposeMutation.mutate()}
+            isLoading={proposeMutation.isPending}
+            leftIcon={<Sparkles className="h-4 w-4" />}
+          >
+            {proposeMutation.isPending ? 'Đang chạy thuật toán...' : 'Đề xuất ghép hàng tự động'}
+          </Button>
+        )}
       </div>
 
+      {/* Action Notification Banner */}
       {actionMessage && (
-        <div className="p-4 rounded-lg bg-blue-950/60 border border-blue-800 text-blue-300 text-sm flex items-center justify-between">
+        <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 text-primary text-xs flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-2">
             <AlertCircle className="h-4 w-4 shrink-0" />
-            <span>{actionMessage}</span>
+            <span className="font-medium">{actionMessage}</span>
           </div>
-          <button onClick={() => setActionMessage(null)} className="text-slate-400 hover:text-white text-xs">
-            Đóng
+          <button onClick={() => setActionMessage(null)} className="text-text-secondary hover:text-title">
+            <X className="h-4 w-4" />
           </button>
         </div>
       )}
 
       {/* Filter Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
         {[
           { label: 'Tất cả', value: 'ALL' },
           { label: 'Đang đề xuất', value: MatchGroupStatus.PROPOSED },
@@ -119,10 +135,10 @@ export default function MatchGroupsPage() {
           <button
             key={tab.value}
             onClick={() => setStatusFilter(tab.value)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${
+            className={`px-3.5 py-1.5 rounded-xl font-medium transition cursor-pointer whitespace-nowrap ${
               statusFilter === tab.value
-                ? 'bg-blue-600 text-white font-semibold shadow-sm'
-                : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                ? 'bg-primary text-white shadow-sm shadow-primary/20'
+                : 'bg-surface-card border border-border-input text-text-secondary hover:bg-surface-hover hover:text-title'
             }`}
           >
             {tab.label}
@@ -130,51 +146,51 @@ export default function MatchGroupsPage() {
         ))}
       </div>
 
-      {/* Main Table */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+      {/* Main Table Card */}
+      <Card className="overflow-hidden bg-surface-card border-border-subtle shadow-sm">
         {isLoading ? (
-          <div className="py-16 text-center text-slate-500 text-sm">Đang tải danh sách nhóm ghép...</div>
+          <div className="py-16 text-center text-text-secondary text-sm">Đang tải danh sách nhóm ghép...</div>
         ) : error ? (
-          <div className="py-16 text-center text-red-400 text-sm">Lỗi tải dữ liệu: {(error as any).message}</div>
+          <div className="py-16 text-center text-rose-600 text-sm">Lỗi tải dữ liệu: {(error as any).message}</div>
         ) : groups.length === 0 ? (
-          <div className="py-16 text-center text-slate-400">
-            <Layers className="h-10 w-10 text-slate-600 mx-auto mb-3" />
-            <p className="text-sm font-semibold text-white">Chưa có kế hoạch ghép container nào</p>
-            <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-              Không tìm thấy nhóm consol phù hợp bộ lọc. Hãy nhấn &quot;Đề xuất ghép hàng tự động&quot; để thuật toán gom các lô hàng đang chờ.
-            </p>
-          </div>
+          <EmptyState
+            icon={<Layers className="h-7 w-7 text-primary" />}
+            title="Chưa có kế hoạch ghép container nào"
+            description="Không tìm thấy nhóm consol phù hợp bộ lọc. Hãy nhấn 'Đề xuất ghép hàng tự động' để thuật toán gom các lô hàng đang chờ."
+            actionLabel="Đề xuất ghép hàng ngay"
+            onAction={() => proposeMutation.mutate()}
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-400 font-medium bg-slate-900/80">
-                  <th className="py-3.5 px-4">Mã Kế Hoạch</th>
+              <thead className="bg-surface-app border-b border-border-subtle text-text-secondary uppercase text-[11px] font-semibold whitespace-nowrap">
+                <tr>
+                  <th className="py-3.5 px-4 sm:px-6">Mã Kế Hoạch</th>
                   <th className="py-3.5 px-4">Tuyến Vận Tải</th>
                   <th className="py-3.5 px-4">Loại Container</th>
-                  <th className="py-3.5 px-4">Số Lô Hàng</th>
-                  <th className="py-3.5 px-4">Độ Lấp Đầy Thể Tích</th>
+                  <th className="py-3.5 px-4 text-center">Số Lô Hàng</th>
+                  <th className="py-3.5 px-4">Lấp Đầy Thể Tích</th>
                   <th className="py-3.5 px-4">Tải Trọng Hàng</th>
                   <th className="py-3.5 px-4">Hạn Chốt Ghép</th>
-                  <th className="py-3.5 px-4">Trạng Thái</th>
-                  <th className="py-3.5 px-4 text-right">Thao Tác</th>
+                  <th className="py-3.5 px-4 text-center">Trạng Thái</th>
+                  <th className="py-3.5 px-4 sm:px-6 text-right">Thao Tác</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60">
+              <tbody className="divide-y divide-border-subtle">
                 {groups.map((g) => {
                   const volRate = g.volumeFillRate;
                   return (
-                    <tr key={g.id} className="hover:bg-slate-800/40 transition">
-                      <td className="py-3.5 px-4 font-mono font-bold text-white">
-                        <Link href={`/match-groups/${g.id}`} className="hover:text-blue-400 flex items-center gap-1.5">
+                    <tr key={g.id} className="hover:bg-surface-app transition-colors">
+                      <td className="py-3.5 px-4 sm:px-6 font-mono-numeric font-bold text-title">
+                        <Link href={`/match-groups/${g.id}`} className="hover:text-primary transition flex items-center gap-1.5">
                           {g.code}
                         </Link>
                       </td>
-                      <td className="py-3.5 px-4 text-slate-200">
+                      <td className="py-3.5 px-4 text-body">
                         {g.lane ? (
                           <div>
-                            <div className="font-semibold text-white">{g.lane.name}</div>
-                            <div className="text-[10px] text-slate-400 font-mono">
+                            <div className="font-semibold text-title">{g.lane.name}</div>
+                            <div className="text-[11px] text-text-secondary font-mono-numeric">
                               {g.lane.origin} → {g.lane.destination}
                             </div>
                           </div>
@@ -183,24 +199,24 @@ export default function MatchGroupsPage() {
                         )}
                       </td>
                       <td className="py-3.5 px-4">
-                        <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-slate-800 border border-slate-700 font-mono text-[11px] text-slate-200">
-                          <Box className="h-3.5 w-3.5 text-blue-400" />
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface-subtle border border-border-subtle font-mono-numeric text-[11px] font-medium text-title">
+                          <Box className="h-3.5 w-3.5 text-primary" />
                           {g.targetContainerType?.code} ({g.targetContainerType?.volumeCbm} m³)
                         </span>
                       </td>
-                      <td className="py-3.5 px-4 text-slate-300 font-medium">
-                        {g.shipmentCount} lô hàng
+                      <td className="py-3.5 px-4 text-center font-mono-numeric font-medium text-body">
+                        {g.shipmentCount} lô
                       </td>
                       <td className="py-3.5 px-4">
                         <div className="w-36">
-                          <div className="flex justify-between text-[11px] mb-1">
-                            <span className="text-white font-semibold">{volRate}%</span>
-                            <span className="text-slate-400">{g.totalCbm} m³</span>
+                          <div className="flex justify-between text-[11px] mb-1 font-mono-numeric">
+                            <span className="text-title font-bold">{volRate}%</span>
+                            <span className="text-text-secondary">{g.totalCbm} m³</span>
                           </div>
-                          <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                          <div className="w-full bg-border-subtle rounded-full h-2 overflow-hidden">
                             <div
-                              className={`h-2 rounded-full ${
-                                volRate > 80 ? 'bg-emerald-500' : volRate > 50 ? 'bg-blue-500' : 'bg-amber-500'
+                              className={`h-2 rounded-full transition-all duration-300 ${
+                                volRate > 80 ? 'bg-emerald-500' : volRate > 50 ? 'bg-primary' : 'bg-amber-500'
                               }`}
                               style={{ width: `${Math.min(volRate, 100)}%` }}
                             />
@@ -209,69 +225,54 @@ export default function MatchGroupsPage() {
                       </td>
                       <td className="py-3.5 px-4">
                         <div className="w-36">
-                          <div className="flex justify-between text-[11px] mb-1">
-                            <span className="text-white font-semibold">{g.weightFillRate}%</span>
-                            <span className="text-slate-400">{g.totalWeightKg} kg</span>
+                          <div className="flex justify-between text-[11px] mb-1 font-mono-numeric">
+                            <span className="text-title font-bold">{g.weightFillRate}%</span>
+                            <span className="text-text-secondary">{g.totalWeightKg} kg</span>
                           </div>
-                          <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                          <div className="w-full bg-border-subtle rounded-full h-2 overflow-hidden">
                             <div
-                              className="h-2 rounded-full bg-indigo-500"
+                              className="h-2 rounded-full bg-indigo-500 transition-all duration-300"
                               style={{ width: `${Math.min(g.weightFillRate, 100)}%` }}
                             />
                           </div>
                         </div>
                       </td>
-                      <td className="py-3.5 px-4 text-slate-400">
+                      <td className="py-3.5 px-4 text-text-secondary font-mono-numeric">
                         {g.cutoffTime ? (
                           <span className="inline-flex items-center gap-1">
-                            <Clock className="h-3 w-3 text-slate-500" />
+                            <Clock className="h-3 w-3 text-text-muted" />
                             {new Date(g.cutoffTime).toLocaleDateString('vi-VN')}
                           </span>
                         ) : (
                           '—'
                         )}
                       </td>
-                      <td className="py-3.5 px-4">
-                        <span
-                          className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-semibold border ${
-                            g.status === 'PROPOSED'
-                              ? 'bg-amber-950/60 text-amber-300 border-amber-800'
-                              : g.status === 'CONFIRMED'
-                              ? 'bg-emerald-950/60 text-emerald-300 border-emerald-800'
-                              : 'bg-slate-800 text-slate-400 border-slate-700'
-                          }`}
-                        >
-                          {g.status === 'PROPOSED'
-                            ? 'Đang đề xuất'
-                            : g.status === 'CONFIRMED'
-                            ? 'Đã chốt ghép'
-                            : g.status}
-                        </span>
+                      <td className="py-3.5 px-4 text-center">
+                        <StatusBadge status={g.status} size="sm" />
                       </td>
-                      <td className="py-3.5 px-4 text-right space-x-2">
-                        <Link
-                          href={`/match-groups/${g.id}`}
-                          className="px-2.5 py-1 text-[11px] rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
-                        >
-                          Chi tiết
+                      <td className="py-3.5 px-4 sm:px-6 text-right space-x-2 whitespace-nowrap">
+                        <Link href={`/match-groups/${g.id}`}>
+                          <Button variant="outline" size="sm">Chi tiết</Button>
                         </Link>
-                        {g.status === 'PROPOSED' && (
-                          <button
+                        {canManageGroup && g.status === 'PROPOSED' && (
+                          <Button
+                            variant="primary"
+                            size="sm"
                             onClick={() => confirmMutation.mutate(g.id)}
-                            disabled={confirmMutation.isPending}
-                            className="px-2.5 py-1 text-[11px] rounded bg-emerald-700 hover:bg-emerald-600 text-white font-medium transition cursor-pointer"
+                            isLoading={confirmMutation.isPending}
                           >
                             Chốt ghép
-                          </button>
+                          </Button>
                         )}
-                        {(g.status === 'PROPOSED' || g.status === 'CONFIRMED') && (
-                          <button
+                        {canManageGroup && (g.status === 'PROPOSED' || g.status === 'CONFIRMED') && (
+                          <Button
+                            variant="danger"
+                            size="sm"
                             onClick={() => cancelMutation.mutate(g.id)}
-                            disabled={cancelMutation.isPending}
-                            className="px-2.5 py-1 text-[11px] rounded bg-red-900/60 hover:bg-red-800 text-red-200 border border-red-800 transition cursor-pointer"
+                            isLoading={cancelMutation.isPending}
                           >
                             Hủy
-                          </button>
+                          </Button>
                         )}
                       </td>
                     </tr>
@@ -281,7 +282,7 @@ export default function MatchGroupsPage() {
             </table>
           </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

@@ -6,4 +6,5 @@ export * from './physics/support-calc';
 export * from './physics/stack-weight-dag';
 export * from './physics/center-of-gravity';
 export * from './prng/seeded-random';
+export * from './evaluation/criteria';
 export * from './engine/packer';

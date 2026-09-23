@@ -203,10 +203,68 @@ describe('Phase 3: Matching Engine & Consolidation (e2e)', () => {
       })
       .expect(201);
     otherLaneId = otherLaneRes.body.id;
-  });
+  }, 30000);
 
   afterAll(async () => {
-    await app.close();
+    try {
+      const testLaneIds = [laneId, otherLaneId].filter(Boolean);
+      if (testLaneIds.length > 0) {
+        // Find match groups on these test lanes
+        const mgs = await prisma.unsafeGlobal.matchGroup.findMany({
+          where: { laneId: { in: testLaneIds } },
+          select: { id: true },
+        });
+        const mgIds = mgs.map((m: any) => m.id);
+        if (mgIds.length > 0) {
+          await prisma.unsafeGlobal.booking.deleteMany({
+            where: { matchGroupId: { in: mgIds } },
+          });
+          await prisma.unsafeGlobal.quote.deleteMany({
+            where: { matchGroupId: { in: mgIds } },
+          });
+          await prisma.unsafeGlobal.matchGroupShipment.deleteMany({
+            where: { matchGroupId: { in: mgIds } },
+          });
+          await prisma.unsafeGlobal.matchGroup.deleteMany({
+            where: { id: { in: mgIds } },
+          });
+        }
+        await prisma.unsafeGlobal.package.deleteMany({
+          where: { shipment: { laneId: { in: testLaneIds } } },
+        });
+        await prisma.unsafeGlobal.shipment.deleteMany({
+          where: { laneId: { in: testLaneIds } },
+        });
+        await prisma.unsafeGlobal.pricingConfig.deleteMany({
+          where: { laneId: { in: testLaneIds } },
+        });
+        await prisma.unsafeGlobal.lane.deleteMany({
+          where: { id: { in: testLaneIds } },
+        });
+      }
+
+      // Cleanup all test companies and users registered with testId
+      const testCompanies = await prisma.unsafeGlobal.company.findMany({
+        where: { taxCode: { contains: testId } },
+        select: { id: true },
+      });
+      const testCompanyIds = testCompanies.map((c: any) => c.id);
+      if (testCompanyIds.length > 0) {
+        await prisma.unsafeGlobal.refreshToken.deleteMany({
+          where: { user: { companyId: { in: testCompanyIds } } },
+        });
+        await prisma.unsafeGlobal.user.deleteMany({
+          where: { companyId: { in: testCompanyIds } },
+        });
+        await prisma.unsafeGlobal.company.deleteMany({
+          where: { id: { in: testCompanyIds } },
+        });
+      }
+    } catch (e) {
+      console.warn('Cleanup error in matching-consolidation e2e:', e);
+    } finally {
+      await app.close();
+    }
   });
 
   describe('1. Container Types Master Data', () => {

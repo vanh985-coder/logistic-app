@@ -341,6 +341,14 @@ export class ShipmentService {
       throw new BadRequestException('Cannot submit shipment without packages');
     }
 
+    for (const p of shipment.packages) {
+      if (p.lengthMm <= 0 || p.widthMm <= 0 || p.heightMm <= 0 || p.weightGrams <= 0) {
+        throw new BadRequestException(
+          `Kiện hàng "${p.packageCode}" có kích thước hoặc khối lượng không hợp lệ (phải > 0)`,
+        );
+      }
+    }
+
     if (shipment.status !== ShipmentStatus.DRAFT && shipment.status !== ShipmentStatus.PRICED) {
       throw new BadRequestException('Shipment is already submitted or confirmed');
     }

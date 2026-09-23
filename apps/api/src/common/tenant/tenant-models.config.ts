@@ -8,7 +8,12 @@ export const TENANT_MODELS = [
 
 export const TENANT_SELF_MODELS = ['Company'] as const;
 
-export const TENANT_RELATION_MODELS = ['MatchGroup'] as const;
+export const TENANT_RELATION_MODELS = [
+  'MatchGroup',
+  'Quote',
+  'Booking',
+  'LoadingProof',
+] as const;
 
 export const GLOBAL_MODELS = [
   'Lane',

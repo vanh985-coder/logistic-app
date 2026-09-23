@@ -54,28 +54,48 @@ export function isRouteAllowedForRole(pathname: string, role?: string | null): b
 export function getNavItemsForRole(role?: string | null): NavItem[] {
   if (!role) return [];
 
-  const items: NavItem[] = [
+  // Platform Admin
+  if (role === UserRole.PLATFORM_ADMIN) {
+    return [
+      { label: '📊 Bảng điều khiển', href: '/dashboard/admin' },
+      { label: '📦 Quản lý Lô hàng', href: '/shipments' },
+      { label: '🧩 Ghép Hàng & Consol', href: '/match-groups' },
+      { label: '🏢 Shipper View', href: '/dashboard/shipper' },
+      { label: '🚢 Forwarder View', href: '/dashboard/fwd' },
+      { label: '🏬 CFS View', href: '/dashboard/cfs' },
+    ];
+  }
+
+  // Shipper Roles
+  if (role.startsWith('SHIPPER') || role === UserRole.COMPANY_ADMIN || role === UserRole.ADMIN) {
+    return [
+      { label: '📊 Bảng điều khiển', href: '/dashboard/shipper' },
+      { label: '📦 Quản lý Lô hàng', href: '/shipments' },
+      { label: '🧩 Ghép Hàng & Consol', href: '/match-groups' },
+    ];
+  }
+
+  // Forwarder Roles
+  if (role.startsWith('FWD')) {
+    return [
+      { label: '📊 Bảng điều khiển', href: '/dashboard/fwd' },
+      { label: '📦 Quản lý Lô hàng', href: '/shipments' },
+      { label: '🧩 Ghép Hàng & Consol', href: '/match-groups' },
+    ];
+  }
+
+  // CFS Warehouse Roles
+  if (role.startsWith('CFS')) {
+    return [
+      { label: '📊 Bảng điều khiển', href: '/dashboard/cfs' },
+      { label: '📦 Quản lý Lô hàng', href: '/shipments' },
+      { label: '🧩 Ghép Hàng & Consol', href: '/match-groups' },
+    ];
+  }
+
+  return [
+    { label: '📊 Bảng điều khiển', href: '/dashboard/shipper' },
     { label: '📦 Quản lý Lô hàng', href: '/shipments' },
     { label: '🧩 Ghép Hàng & Consol', href: '/match-groups' },
   ];
-
-  if (role === UserRole.PLATFORM_ADMIN) {
-    items.push(
-      { label: 'Chủ hàng (Shipper)', href: '/dashboard/shipper' },
-      { label: 'Giao nhận (Forwarder)', href: '/dashboard/fwd' },
-      { label: 'Kho gom hàng (CFS)', href: '/dashboard/cfs' },
-      { label: 'Quản trị sàn (Admin)', href: '/dashboard/admin' },
-    );
-    return items;
-  }
-
-  if (role.startsWith('SHIPPER') || role === UserRole.COMPANY_ADMIN || role === UserRole.ADMIN) {
-    items.push({ label: 'Chủ hàng (Shipper)', href: '/dashboard/shipper' });
-  } else if (role.startsWith('FWD')) {
-    items.push({ label: 'Giao nhận (Forwarder)', href: '/dashboard/fwd' });
-  } else if (role.startsWith('CFS')) {
-    items.push({ label: 'Kho gom hàng (CFS)', href: '/dashboard/cfs' });
-  }
-
-  return items;
 }

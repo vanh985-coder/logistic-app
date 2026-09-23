@@ -110,21 +110,30 @@ describe('Multi-Tenant Isolation & RBAC Protection (e2e)', () => {
   });
 
   afterAll(async () => {
-    // Cleanup companies
     try {
-      await prisma.unsafeGlobal.company.deleteMany({
-        where: {
-          taxCode: {
-            in: [companyAPayload.taxCode, companyBPayload.taxCode, `TAX-PLATFORM-${testId}`],
-          },
-        },
+      const taxCodes = [companyAPayload.taxCode, companyBPayload.taxCode, `TAX-PLATFORM-${testId}`];
+      const testCompanies = await prisma.unsafeGlobal.company.findMany({
+        where: { taxCode: { in: taxCodes } },
+        select: { id: true },
       });
-    } catch {
-      // ignore
-    }
-
-    if (app) {
-      await app.close();
+      const testCompanyIds = testCompanies.map((c: any) => c.id);
+      if (testCompanyIds.length > 0) {
+        await prisma.unsafeGlobal.refreshToken.deleteMany({
+          where: { user: { companyId: { in: testCompanyIds } } },
+        });
+        await prisma.unsafeGlobal.user.deleteMany({
+          where: { companyId: { in: testCompanyIds } },
+        });
+        await prisma.unsafeGlobal.company.deleteMany({
+          where: { id: { in: testCompanyIds } },
+        });
+      }
+    } catch (e) {
+      console.warn('Cleanup error in tenant-isolation e2e:', e);
+    } finally {
+      if (app) {
+        await app.close();
+      }
     }
   });
 

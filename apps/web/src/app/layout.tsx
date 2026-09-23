@@ -1,6 +1,14 @@
 import type { Metadata } from 'next';
+import { Montserrat } from 'next/font/google';
 import './globals.css';
 import { Providers } from '../components/providers';
+
+const montserrat = Montserrat({
+  subsets: ['latin', 'vietnamese'],
+  weight: ['400', '500', '600', '700'],
+  display: 'swap',
+  variable: '--font-sans',
+});
 
 export const metadata: Metadata = {
   title: 'LOGIX-3D — Nền Tảng Ghép Hàng LCL & Tối Ưu Container 3D',
@@ -13,8 +21,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="vi" className="dark">
-      <body className="min-h-screen bg-background text-foreground antialiased selection:bg-blue-600 selection:text-white">
+    <html lang="vi" className={montserrat.variable}>
+      <body className="min-h-screen bg-surface-app text-body font-sans antialiased selection:bg-primary selection:text-white">
         <Providers>
           {children}
         </Providers>
@@ -22,3 +30,4 @@ export default function RootLayout({
     </html>
   );
 }
+

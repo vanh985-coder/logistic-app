@@ -3,48 +3,116 @@
 @tailwind utilities;
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
-  --card: #ffffff;
-  --card-foreground: #0f172a;
-  --primary: #2563eb;
-  --primary-foreground: #ffffff;
-  --secondary: #f1f5f9;
-  --secondary-foreground: #1e293b;
-  --muted: #f1f5f9;
-  --muted-foreground: #64748b;
-  --accent: #eff6ff;
-  --accent-foreground: #1d4ed8;
-  --border: #e2e8f0;
-  --input: #e2e8f0;
-  --ring: #2563eb;
-}
+  /* Canvas & Surface Tokens (Default Light Mode) */
+  --bg-app: #f8fafc;
+  --surface-card: #ffffff;
+  --surface-subtle: #f0f4fa;
+  --surface-hover: #f1f5f9;
 
-.dark {
-  --background: #090d16;
-  --foreground: #f8fafc;
-  --card: #0f172a;
-  --card-foreground: #f8fafc;
-  --primary: #3b82f6;
+  /* Brand Primary */
+  --primary: #0d7cf7;
+  --primary-hover: #0a68d1;
+  --primary-active: #0854a8;
+  --primary-tint: #eff6ff;
   --primary-foreground: #ffffff;
-  --secondary: #1e293b;
-  --secondary-foreground: #f8fafc;
-  --muted: #1e293b;
-  --muted-foreground: #94a3b8;
-  --accent: #1e293b;
-  --accent-foreground: #93c5fd;
-  --border: #1e293b;
-  --input: #1e293b;
-  --ring: #3b82f6;
+
+  /* Borders */
+  --border-input: #dce1ea;
+  --border-subtle: #e2e8f0;
+
+  /* Typography */
+  --text-title: #0a192f;
+  --text-body: #1e293b;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+
+  /* 3D Viewport Exception (Dark by design) */
+  --viewport-3d: #090d16;
+
+  /* Semantic Status Tokens */
+  --status-draft-bg: #f1f5f9;
+  --status-draft-text: #475569;
+  --status-draft-border: #cbd5e1;
+
+  --status-pending-bg: #fef5e4;
+  --status-pending-text: #d97706;
+  --status-pending-border: #fde68a;
+
+  --status-verified-bg: #daf6f9;
+  --status-verified-text: #23a19e;
+  --status-verified-border: #a5f3fc;
+
+  --status-processing-bg: #e0f6fd;
+  --status-processing-text: #0284c7;
+  --status-processing-border: #7dd3fc;
+
+  --status-staging-bg: #fff7ed;
+  --status-staging-text: #fd791c;
+  --status-staging-border: #fed7aa;
+
+  --status-active-bg: #f0fdf4;
+  --status-active-text: #168168;
+  --status-active-border: #a7f3d0;
+
+  --status-matched-bg: #dcfce7;
+  --status-matched-text: #16a34a;
+  --status-matched-border: #86efac;
+
+  --status-confirmed-bg: #ccfbf1;
+  --status-confirmed-text: #0f766e;
+  --status-confirmed-border: #5eead4;
+
+  --status-cancelled-bg: #ffe4e6;
+  --status-cancelled-text: #be123c;
+  --status-cancelled-border: #fda4af;
+
+  /* 12 Shipper Colors in 3D (Calibrated Contrast & CIEDE2000) */
+  --shipper-1: #d946ef;
+  --shipper-1-wire: #f0abfc;
+  --shipper-2: #eab308;
+  --shipper-2-wire: #fef08a;
+  --shipper-3: #38bdf8;
+  --shipper-3-wire: #bae6fd;
+  --shipper-4: #84cc16;
+  --shipper-4-wire: #bef264;
+  --shipper-5: #f472b6;
+  --shipper-5-wire: #fbceeb;
+  --shipper-6: #7c3aed;
+  --shipper-6-wire: #a78bfa;
+  --shipper-7: #d4b996;
+  --shipper-7-wire: #f5ebe0;
+  --shipper-8: #94a3b8;
+  --shipper-8-wire: #cbd5e1;
+  --shipper-9: #be185d;
+  --shipper-9-wire: #fda4af;
+  --shipper-10: #4d7c0f;
+  --shipper-10-wire: #a3e635;
+  --shipper-11: #b45309;
+  --shipper-11-wire: #fde68a;
+  --shipper-12: #64748b;
+  --shipper-12-wire: #94a3b8;
+
+  /* Standard theme alias mappings for existing components */
+  --background: var(--bg-app);
+  --foreground: var(--text-body);
+  --card: var(--surface-card);
+  --card-foreground: var(--text-body);
+  --border: var(--border-subtle);
+  --input: var(--border-input);
+  --ring: var(--primary);
+  --muted: var(--surface-subtle);
+  --muted-foreground: var(--text-muted);
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
+  color: var(--text-body);
+  background-color: var(--bg-app);
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  min-height: 100vh;
 }
 
 .font-mono-numeric {
   font-variant-numeric: tabular-nums;
-  font-family: var(--font-geist-mono, ui-monospace, monospace);
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }

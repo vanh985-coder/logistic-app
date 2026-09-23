@@ -95,3 +95,28 @@ Kiểm thử `packages/packing/test/determinism.spec.ts`: Chạy 3 lần độc 
 | **500 kiện** | **5,599.42 ms** | 98 / 500 (chạm trần cont) | **86.75%** | **49.87%** (hoàn hảo trong [45%, 55%]) | -6.4 MB (GC) |
 
 *(Ghi chú: Ở kịch bản 500 kiện, container 40HC đạt ngưỡng trần thể tích và tải trọng tối đa tại kiện thứ 98 nên dừng sớm an toàn, đạt hiệu suất lấp đầy 86.75% chỉ trong 5.6 giây).*
+
+### 4. Phát Hiện Điểm Yếu Hệ Thống: Bẫy Khoảng Trần Chết (Ceiling Dead-Space Trap) Lần Thứ Hai
+
+Trong quá trình thực nghiệm và kiểm thử trên dữ liệu thực tế (`MG-DEMO-40HC-01`), một hiện tượng bẫy hình học mang tính **hệ thống** của thuật toán đã tái diễn lần thứ hai:
+
+- **Lần 1 (Tại Phase 4 với kiện 900mm và 800mm):** Chiều cao lòng container 40HC là $H = 2698\text{mm}$. Khi xếp 3 kiện cao $900\text{mm}$, tổng chiều cao là $2700\text{mm} > 2698\text{mm}$ (vượt quá đúng $2\text{mm}$). Giải thuật không thể xếp tầng 3 bằng kiện $900\text{mm}$, và nếu không có cơ chế điều phối chiều cao thì khoảng trần $2698 - 1800 = 898\text{mm}$ bị lãng phí nếu không kết hợp được với kiện $800\text{mm}$.
+- **Lần 2 (Tại Đợt 2 với bộ dữ liệu thật 72 kiện của 6 chủ hàng):**
+  - Trong `MG-DEMO-40HC-01`, có 12 kiện kích thước lớn $1200\times 1000\times 1000\text{mm}$.
+  - Khi áp dụng heuristic thể tích giảm dần toàn cục (*Global Volume-Descending*), cả 12 kiện cao $1000\text{mm}$ này được xếp trước và chiếm trọn diện tích sàn container.
+  - Hai kiện cao $1000\text{mm}$ xếp chồng lên nhau đạt độ cao $2000\text{mm}$, để lại khoảng hở trần:
+    $$2698\text{mm} - 2000\text{mm} = 698\text{mm}$$
+  - Tuy nhiên, kiện có chiều cao nhỏ nhất trong toàn bộ 72 kiện của database là **$700\text{mm}$** ($1200\times 800\times 700\text{mm}$).
+  - Do $698\text{mm} < 700\text{mm}$, toàn bộ khoảng không gian $698\text{mm}$ kéo dài suốt nóc container trở thành **KHÔNG GIAN CHẾT (Dead Space)**, không thể nhét vừa bất kỳ kiện nào!
+  - Hậu quả: Dù là chiến lược `MAX_VOLUME`, giải thuật lại bị kẹt ở 63/72 kiện (bỏ lại 9 kiện nhỏ nhất ở cuối danh sách), thua cả chiến lược `LIFO_PRIORITY` (66/72 kiện) vốn vô tình gom kiện theo chủ hàng có chiều cao đa dạng.
+
+#### Bài học kiến trúc & Giải pháp khắc phục có hệ thống:
+Đây là **điểm yếu cố hữu** của các thuật toán Heuristic tham lam kiểu Best-Fit Decreasing: việc xếp toàn bộ kiện to xuống trước tạo ra một mặt sàn giả ở cao độ cố định, biến phần không gian trần còn lại thành "phế phẩm" nếu nó nhỏ hơn kiện nhỏ nhất trong kho.
+
+**Giải pháp đã áp dụng trong `@logix/packing`:**
+1. **Shipment Lot Batching Heuristic:** Thay vì sắp xếp giảm dần toàn cục qua tất cả các chủ hàng, thuật toán bổ sung hoán vị gom kiện theo từng lô chủ hàng (*Lot Batching*). Vì mỗi chủ hàng sở hữu cơ cấu kích thước đa dạng (kiện 1000, 900, 850, 800, 700mm), giải thuật tự động ghép các kiện thành cột 3 tầng hoàn chỉnh:
+   - $1000\text{mm} + 850\text{mm} + 800\text{mm} = 2650\text{mm}$ (hở trần chỉ $48\text{mm} \approx 1.8\%$).
+   - $900\text{mm} + 900\text{mm} + 800\text{mm} = 2600\text{mm}$ (hở trần $98\text{mm} \approx 3.6\%$).
+2. **Loại bỏ ảnh hưởng chéo của `dropOrder`:** Cô lập hoàn toàn điểm thưởng `fLifo` và hoán vị dỡ hàng chỉ cho chiến lược `LIFO_PRIORITY`. Chiến lược `MAX_VOLUME` tập trung 100% vào việc khai thác không gian container qua các hoán vị thể tích, tỷ trọng (*Density*), diện tích đáy (*Footprint*), và xáo trộn cửa sổ (*Windowed Perturbation*).
+3. **Kết quả:** `MAX_VOLUME` vươn lên dẫn đầu với **68/72 kiện xếp được (Fill Rate 73.57%)**, cao hơn `LIFO_PRIORITY` (66/72 kiện, 73.30%) và `CONSIGNEE_GROUPED` (66/72 kiện, 73.02%).
+

@@ -12,7 +12,9 @@
     "infra:up": "docker compose -f infra/docker-compose.yml up -d",
     "infra:down": "docker compose -f infra/docker-compose.yml down",
     "prisma:generate": "turbo run prisma:generate",
-    "prisma:migrate": "turbo run prisma:migrate"
+    "prisma:migrate": "turbo run prisma:migrate",
+    "seed": "pnpm --filter @logix/api seed",
+    "db:clean-test": "pnpm --filter @logix/api db:clean-test"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -12,6 +12,10 @@ import { LaneModule } from './modules/lane/lane.module';
 import { ShipmentModule } from './modules/shipment/shipment.module';
 import { MatchingModule } from './modules/matching/matching.module';
 import { PackingModule } from './modules/packing/packing.module';
+import { QuoteModule } from './modules/quote/quote.module';
+import { StorageModule } from './modules/storage/storage.module';
+import { LoadingProofModule } from './modules/loading-proof/loading-proof.module';
+import { CfsModule } from './modules/cfs/cfs.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from './modules/auth/guards/roles.guard';
 import { TenantInterceptor } from './common/tenant/tenant.interceptor';
@@ -29,6 +33,10 @@ import { TenantInterceptor } from './common/tenant/tenant.interceptor';
     ShipmentModule,
     MatchingModule,
     PackingModule,
+    QuoteModule,
+    StorageModule,
+    LoadingProofModule,
+    CfsModule,
   ],
   providers: [
     {

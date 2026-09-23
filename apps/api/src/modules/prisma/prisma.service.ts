@@ -14,6 +14,8 @@ function toModelKey(model: string): string {
   return model.charAt(0).toLowerCase() + model.slice(1);
 }
 
+export interface PrismaService extends PrismaClient {}
+
 @Injectable()
 export class PrismaService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);
@@ -21,8 +23,14 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   private readonly extendedClient: any;
 
   constructor(private readonly tenantContextService: TenantContextService) {
+    const isTest = process.env.NODE_ENV === 'test';
+    const effectiveDbUrl = isTest && process.env.DATABASE_URL_TEST
+      ? process.env.DATABASE_URL_TEST
+      : process.env.DATABASE_URL;
+
     this.basePrisma = new PrismaClient({
       log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
+      datasources: effectiveDbUrl ? { db: { url: effectiveDbUrl } } : undefined,
     });
 
     const tenantContext = this.tenantContextService;
@@ -277,6 +285,286 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
                   throw new ForbiddenException(
                     `Direct modification of ${model} is restricted to authorized consolidation operators.`,
                   );
+                }
+              }
+
+              if (model === 'Quote') {
+                const role = context?.role as string;
+                const isFwd = ['FWD_ADMIN', 'FWD_OPERATOR'].includes(role);
+                const isShipper = ['SHIPPER_ADMIN', 'SHIPPER_MEMBER'].includes(role);
+
+                let relationFilter: any;
+                if (isFwd) {
+                  relationFilter = { fwdCompanyId: companyId };
+                } else if (isShipper) {
+                  relationFilter = {
+                    matchGroup: {
+                      matchGroupShipments: {
+                        some: { companyId },
+                      },
+                    },
+                  };
+                } else {
+                  relationFilter = { id: '__unauthorized_tenant__' };
+                }
+
+                if (operation === 'findUnique') {
+                  return (base as any).quote.findFirst({
+                    ...args,
+                    where: args.where ? { AND: [args.where, relationFilter] } : relationFilter,
+                  });
+                }
+
+                if (operation === 'findUniqueOrThrow') {
+                  return (base as any).quote.findFirstOrThrow({
+                    ...args,
+                    where: args.where ? { AND: [args.where, relationFilter] } : relationFilter,
+                  });
+                }
+
+                if (
+                  [
+                    'findFirst',
+                    'findFirstOrThrow',
+                    'findMany',
+                    'count',
+                    'aggregate',
+                    'groupBy',
+                  ].includes(operation)
+                ) {
+                  args.where = args.where
+                    ? { AND: [args.where, relationFilter] }
+                    : relationFilter;
+                  return query(args);
+                }
+
+                if (operation === 'create') {
+                  if (!isFwd) {
+                    throw new ForbiddenException('Only FWD operators can create quotes.');
+                  }
+                  args.data = { ...args.data, fwdCompanyId: companyId };
+                  return query(args);
+                }
+
+                if (['update', 'delete'].includes(operation)) {
+                  if (!isFwd) {
+                    throw new ForbiddenException('Only FWD operators can modify quotes.');
+                  }
+                  await (base as any).quote.findFirstOrThrow({
+                    where: {
+                      ...args.where,
+                      fwdCompanyId: companyId,
+                    },
+                    select: { id: true },
+                  });
+                  return query(args);
+                }
+
+                if (['updateMany', 'deleteMany'].includes(operation)) {
+                  if (!isFwd) {
+                    throw new ForbiddenException('Only FWD operators can modify quotes.');
+                  }
+                  args.where = args.where
+                    ? { AND: [args.where, { fwdCompanyId: companyId }] }
+                    : { fwdCompanyId: companyId };
+                  return query(args);
+                }
+              }
+
+              if (model === 'Booking') {
+                const role = context?.role as string;
+                const isFwd = ['FWD_ADMIN', 'FWD_OPERATOR'].includes(role);
+                const isShipper = ['SHIPPER_ADMIN', 'SHIPPER_MEMBER'].includes(role);
+                const isCfs = ['CFS_ADMIN', 'CFS_OPERATOR'].includes(role);
+
+                let relationFilter: any;
+                if (isFwd) {
+                  relationFilter = { fwdCompanyId: companyId };
+                } else if (isShipper) {
+                  relationFilter = {
+                    matchGroup: {
+                      matchGroupShipments: {
+                        some: { companyId },
+                      },
+                    },
+                  };
+                } else if (isCfs) {
+                  relationFilter = {
+                    OR: [
+                      { cfsCompanyId: companyId },
+                      { cfsCompanyId: null },
+                    ],
+                  };
+                } else {
+                  relationFilter = { id: '__unauthorized_tenant__' };
+                }
+
+                if (operation === 'findUnique') {
+                  return (base as any).booking.findFirst({
+                    ...args,
+                    where: args.where ? { AND: [args.where, relationFilter] } : relationFilter,
+                  });
+                }
+
+                if (operation === 'findUniqueOrThrow') {
+                  return (base as any).booking.findFirstOrThrow({
+                    ...args,
+                    where: args.where ? { AND: [args.where, relationFilter] } : relationFilter,
+                  });
+                }
+
+                if (
+                  [
+                    'findFirst',
+                    'findFirstOrThrow',
+                    'findMany',
+                    'count',
+                    'aggregate',
+                    'groupBy',
+                  ].includes(operation)
+                ) {
+                  args.where = args.where
+                    ? { AND: [args.where, relationFilter] }
+                    : relationFilter;
+                  return query(args);
+                }
+
+                if (operation === 'create') {
+                  if (!isFwd) {
+                    throw new ForbiddenException('Only FWD operators can create bookings.');
+                  }
+                  args.data = { ...args.data, fwdCompanyId: companyId };
+                  return query(args);
+                }
+
+                if (['update', 'delete'].includes(operation)) {
+                  if (!isFwd && !isCfs) {
+                    throw new ForbiddenException('Shippers cannot modify bookings.');
+                  }
+                  const checkFilter = isFwd
+                    ? { fwdCompanyId: companyId }
+                    : { cfsCompanyId: companyId };
+                  await (base as any).booking.findFirstOrThrow({
+                    where: {
+                      ...args.where,
+                      ...checkFilter,
+                    },
+                    select: { id: true },
+                  });
+                  return query(args);
+                }
+
+                if (['updateMany', 'deleteMany'].includes(operation)) {
+                  if (!isFwd && !isCfs) {
+                    throw new ForbiddenException('Shippers cannot modify bookings.');
+                  }
+                  const checkFilter = isFwd
+                    ? { fwdCompanyId: companyId }
+                    : { cfsCompanyId: companyId };
+                  args.where = args.where
+                    ? { AND: [args.where, checkFilter] }
+                    : checkFilter;
+                  return query(args);
+                }
+              }
+
+              if (model === 'LoadingProof') {
+                const role = context?.role as string;
+                const isFwd = ['FWD_ADMIN', 'FWD_OPERATOR'].includes(role);
+                const isCfs = ['CFS_ADMIN', 'CFS_OPERATOR'].includes(role);
+                const isShipper = ['SHIPPER_ADMIN', 'SHIPPER_MEMBER'].includes(role);
+
+                let relationFilter: any;
+                if (isCfs) {
+                  relationFilter = {
+                    OR: [
+                      { companyId },
+                      { booking: { cfsCompanyId: companyId } },
+                    ],
+                  };
+                } else if (isFwd) {
+                  relationFilter = {
+                    booking: { fwdCompanyId: companyId },
+                  };
+                } else if (isShipper) {
+                  relationFilter = {
+                    OR: [
+                      {
+                        proofType: 'INBOUND_INSPECTION',
+                        shipment: { companyId },
+                      },
+                      {
+                        proofType: { in: ['LAYER_PACKED', 'SEAL_CLOSED'] },
+                        matchGroup: {
+                          matchGroupShipments: { some: { companyId } },
+                        },
+                      },
+                    ],
+                  };
+                } else {
+                  relationFilter = { id: '__unauthorized_tenant__' };
+                }
+
+                if (operation === 'findUnique') {
+                  return (base as any).loadingProof.findFirst({
+                    ...args,
+                    where: args.where ? { AND: [args.where, relationFilter] } : relationFilter,
+                  });
+                }
+
+                if (operation === 'findUniqueOrThrow') {
+                  return (base as any).loadingProof.findFirstOrThrow({
+                    ...args,
+                    where: args.where ? { AND: [args.where, relationFilter] } : relationFilter,
+                  });
+                }
+
+                if (
+                  [
+                    'findFirst',
+                    'findFirstOrThrow',
+                    'findMany',
+                    'count',
+                    'aggregate',
+                    'groupBy',
+                  ].includes(operation)
+                ) {
+                  args.where = args.where
+                    ? { AND: [args.where, relationFilter] }
+                    : relationFilter;
+                  return query(args);
+                }
+
+                if (operation === 'create') {
+                  if (isShipper) {
+                    throw new ForbiddenException('Shippers cannot create loading proofs.');
+                  }
+                  args.data = { ...args.data, companyId };
+                  return query(args);
+                }
+
+                if (['update', 'delete'].includes(operation)) {
+                  if (isShipper) {
+                    throw new ForbiddenException('Shippers cannot modify loading proofs.');
+                  }
+                  await (base as any).loadingProof.findFirstOrThrow({
+                    where: {
+                      ...args.where,
+                      ...relationFilter,
+                    },
+                    select: { id: true },
+                  });
+                  return query(args);
+                }
+
+                if (['updateMany', 'deleteMany'].includes(operation)) {
+                  if (isShipper) {
+                    throw new ForbiddenException('Shippers cannot modify loading proofs.');
+                  }
+                  args.where = args.where
+                    ? { AND: [args.where, relationFilter] }
+                    : relationFilter;
+                  return query(args);
                 }
               }
             }

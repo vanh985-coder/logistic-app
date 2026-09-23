@@ -1,4 +1,4 @@
-﻿import { ChargeableBasis } from '../constants/enums.js';
+import { ChargeableBasis } from '../constants/enums.js';
 import {
   PackagePricingInput,
   PricingConfigInput,
@@ -75,6 +75,10 @@ export function calculateShipmentPricing(
   let maxHgReason: HgReason = 'STANDARD';
 
   for (const pkg of packages) {
+    if (pkg.lengthMm <= 0 || pkg.widthMm <= 0 || pkg.heightMm <= 0 || pkg.weightGrams <= 0) {
+      throw new Error(`Kiện hàng "${pkg.packageCode || 'Không rõ'}" phải có kích thước và khối lượng lớn hơn 0`);
+    }
+
     const vol =
       pkg.volumeMm3 ??
       calcVolumeMm3(pkg.lengthMm, pkg.widthMm, pkg.heightMm);

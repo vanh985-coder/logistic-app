@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchApi } from '@/lib/api-client';
 import { MatchGroupDto } from '@logix/shared';
-import { Layers, ArrowRight, Sparkles, Box, AlertCircle } from 'lucide-react';
+import { Layers, ArrowRight, Sparkles, Box, AlertCircle, LayoutDashboard, X } from 'lucide-react';
+import { Button, StatusBadge, Card, EmptyState } from '@/components/ui';
 
 interface MatchGroupStats {
   totalMatchGroups: number;
@@ -17,6 +18,14 @@ interface MatchGroupStats {
   avgWeightFillRate: number;
 }
 
+interface FwdMetrics {
+  availableGroupsCount: number;
+  myQuotesCount: number;
+  activeBookingsCount: number;
+  totalCbmConsolidated: string;
+  totalCbmMm3: string;
+}
+
 export default function ForwarderDashboardPage() {
   const queryClient = useQueryClient();
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -24,6 +33,12 @@ export default function ForwarderDashboardPage() {
   const { data: stats, isLoading: isStatsLoading } = useQuery<MatchGroupStats>({
     queryKey: ['match-groups', 'stats'],
     queryFn: () => fetchApi<MatchGroupStats>('/match-groups/stats'),
+    staleTime: 5000,
+  });
+
+  const { data: fwdMetrics, isLoading: isMetricsLoading } = useQuery<FwdMetrics>({
+    queryKey: ['match-groups', 'fwd-metrics'],
+    queryFn: () => fetchApi<FwdMetrics>('/match-groups/fwd-metrics'),
     staleTime: 5000,
   });
 
@@ -85,155 +100,166 @@ export default function ForwarderDashboardPage() {
   const groups = groupsData?.items ?? [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 font-sans pb-12">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white">
+          <h1 className="text-2xl font-bold tracking-tight text-title flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+              <LayoutDashboard className="h-5 w-5" />
+            </div>
             Bảng Điều Khiển Giao Nhận Vận Tải (Forwarder)
           </h1>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-xs sm:text-sm text-text-secondary mt-1">
             Lập kế hoạch đóng ghép container LCL, tối ưu tỷ lệ lấp đầy thể tích và phân bổ tải trọng axle load.
           </p>
         </div>
 
-        <button
+        <Button
+          variant="primary"
+          size="md"
           onClick={() => proposeMutation.mutate()}
-          disabled={proposeMutation.isPending}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition shadow-lg shadow-blue-500/20 disabled:opacity-50 cursor-pointer"
+          isLoading={proposeMutation.isPending}
+          leftIcon={<Sparkles className="h-4 w-4" />}
         >
-          <Sparkles className="h-4 w-4" />
           {proposeMutation.isPending ? 'Đang chạy thuật toán...' : 'Đề xuất ghép hàng tự động'}
-        </button>
+        </Button>
       </div>
 
+      {/* Action Notification Banner */}
       {actionMessage && (
-        <div className="p-4 rounded-lg bg-blue-950/60 border border-blue-800 text-blue-300 text-sm flex items-center justify-between">
+        <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 text-primary text-xs flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-2">
             <AlertCircle className="h-4 w-4 shrink-0" />
-            <span>{actionMessage}</span>
+            <span className="font-medium">{actionMessage}</span>
           </div>
-          <button onClick={() => setActionMessage(null)} className="text-slate-400 hover:text-white text-xs">
-            Đóng
+          <button onClick={() => setActionMessage(null)} className="text-text-secondary hover:text-title">
+            <X className="h-4 w-4" />
           </button>
         </div>
       )}
 
       {/* Real Statistics Cards */}
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Kế Hoạch Đang Hoạt Động
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Card className="p-5 bg-surface-card border-border-subtle shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
+            Nhóm Chờ Báo Giá
           </div>
-          <div className="mt-2 text-3xl font-extrabold text-blue-400 font-mono">
-            {isStatsLoading ? '...' : (stats?.activeMatchGroups ?? 0)}
+          <div className="mt-2 text-3xl font-extrabold text-title font-mono-numeric">
+            {isMetricsLoading && isStatsLoading
+              ? '...'
+              : (fwdMetrics?.availableGroupsCount ?? stats?.activeMatchGroups ?? 0)}
           </div>
-          <div className="mt-1 text-xs text-slate-500">Container đang đề xuất hoặc đã chốt</div>
-        </div>
+          <div className="mt-1 text-xs text-text-muted">Container đang chờ FWD chào giá</div>
+        </Card>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Lô Hàng Đã Ghép
+        <Card className="p-5 bg-surface-card border-border-subtle shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
+            Báo Giá Của Bạn
           </div>
-          <div className="mt-2 text-3xl font-extrabold text-indigo-400 font-mono">
-            {isStatsLoading ? '...' : (stats?.totalGroupedShipments ?? 0)}
+          <div className="mt-2 text-3xl font-extrabold text-indigo-600 font-mono-numeric">
+            {isMetricsLoading ? '...' : (fwdMetrics?.myQuotesCount ?? 0)}
           </div>
-          <div className="mt-1 text-xs text-slate-500">Lô hàng nằm trong các nhóm consol</div>
-        </div>
+          <div className="mt-1 text-xs text-text-muted">Báo giá FWD đã gửi cho nhóm gom</div>
+        </Card>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Tổng Khối Tích Đã Gom
+        <Card className="p-5 bg-surface-card border-border-subtle shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
+            Booking Đang Vận Hành
           </div>
-          <div className="mt-2 text-3xl font-extrabold text-emerald-400 font-mono">
-            {isStatsLoading ? '...' : `${stats?.totalGroupedCbm ?? '0.00'} m³`}
+          <div className="mt-2 text-3xl font-extrabold text-emerald-600 font-mono-numeric">
+            {isMetricsLoading ? '...' : (fwdMetrics?.activeBookingsCount ?? 0)}
           </div>
-          <div className="mt-1 text-xs text-slate-500">Dung tích hàng hóa đã được bố trí</div>
-        </div>
+          <div className="mt-1 text-xs text-text-muted">Container đã chốt booking vận tải</div>
+        </Card>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Tỷ Lệ Lấp Đầy TB
+        <Card className="p-5 bg-surface-card border-border-subtle shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
+            Tổng Khối Tích Gom
           </div>
-          <div className="mt-2 text-3xl font-extrabold text-amber-400 font-mono">
-            {isStatsLoading ? '...' : `${stats?.avgVolumeFillRate ?? 0}%`}
+          <div className="mt-2 text-3xl font-extrabold text-amber-600 font-mono-numeric">
+            {isMetricsLoading && isStatsLoading
+              ? '...'
+              : `${Number(fwdMetrics?.totalCbmConsolidated || 0).toFixed(2)} m³`}
           </div>
-          <div className="mt-1 text-xs text-slate-500">
-            Tải trọng: {stats?.avgWeightFillRate ?? 0}%
+          <div className="mt-1 text-xs text-text-muted">
+            Lấp đầy TB: <span className="font-semibold text-body">{stats?.avgVolumeFillRate ?? 0}%</span>
           </div>
-        </div>
+        </Card>
       </div>
 
-      {/* Match Groups List */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+      {/* Match Groups List Card */}
+      <Card className="p-6 bg-surface-card border-border-subtle shadow-sm">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-bold text-white">
-            Kế hoạch đóng ghép container đang thực hiện
+          <h2 className="text-base font-bold text-title flex items-center gap-2">
+            <Layers className="h-4 w-4 text-primary" />
+            Kế Hoạch Đóng Ghép Container Đang Thực Hiện
           </h2>
           <Link
             href="/match-groups"
-            className="text-xs text-blue-400 hover:text-blue-300 font-medium inline-flex items-center gap-1"
+            className="text-xs text-primary hover:text-primary-hover font-semibold inline-flex items-center gap-1 transition"
           >
             Xem tất cả <ArrowRight className="h-3 w-3" />
           </Link>
         </div>
 
         {isGroupsLoading ? (
-          <div className="py-12 text-center text-slate-500 text-sm">Đang tải danh sách nhóm ghép...</div>
+          <div className="py-12 text-center text-text-secondary text-sm">Đang tải danh sách nhóm ghép...</div>
         ) : groups.length === 0 ? (
-          <div className="py-12 text-center text-slate-400">
-            <Layers className="h-10 w-10 text-slate-600 mx-auto mb-3" />
-            <p className="text-sm font-semibold text-white">Chưa có kế hoạch đóng ghép container nào</p>
-            <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-              Nhấn nút &quot;Đề xuất ghép hàng tự động&quot; phía trên để thuật toán tự động quét các lô hàng đã gửi và tối ưu container.
-            </p>
-          </div>
+          <EmptyState
+            icon={<Layers className="h-7 w-7 text-primary" />}
+            title="Chưa có kế hoạch đóng ghép container nào"
+            description="Nhấn nút 'Đề xuất ghép hàng tự động' phía trên để thuật toán tự động quét các lô hàng đã gửi và tối ưu container."
+            actionLabel="Đề xuất ghép hàng ngay"
+            onAction={() => proposeMutation.mutate()}
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-400 font-medium">
+              <thead className="bg-surface-app text-text-secondary uppercase text-[11px] font-semibold border-b border-border-subtle">
+                <tr>
                   <th className="py-3 px-4">Mã Nhóm</th>
                   <th className="py-3 px-4">Tuyến Vận Chuyển</th>
                   <th className="py-3 px-4">Vỏ Container</th>
-                  <th className="py-3 px-4">Số Lô Hàng</th>
+                  <th className="py-3 px-4 text-center">Số Lô Hàng</th>
                   <th className="py-3 px-4">Lấp Đầy Thể Tích</th>
                   <th className="py-3 px-4">Tải Trọng</th>
-                  <th className="py-3 px-4">Trạng Thái</th>
+                  <th className="py-3 px-4 text-center">Trạng Thái</th>
                   <th className="py-3 px-4 text-right">Thao Tác</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60">
+              <tbody className="divide-y divide-border-subtle">
                 {groups.map((g) => {
                   const volRate = g.volumeFillRate;
                   return (
-                    <tr key={g.id} className="hover:bg-slate-800/40 transition">
-                      <td className="py-3 px-4 font-mono font-bold text-white">
-                        <Link href={`/match-groups/${g.id}`} className="hover:text-blue-400">
+                    <tr key={g.id} className="hover:bg-surface-app transition-colors">
+                      <td className="py-3 px-4 font-mono-numeric font-bold text-title">
+                        <Link href={`/match-groups/${g.id}`} className="hover:text-primary transition">
                           {g.code}
                         </Link>
                       </td>
-                      <td className="py-3 px-4 text-slate-300">
+                      <td className="py-3 px-4 text-body font-medium">
                         {g.lane ? `${g.lane.origin} → ${g.lane.destination}` : g.laneId}
                       </td>
-                      <td className="py-3 px-4 text-slate-300">
-                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-800 border border-slate-700 font-mono text-[11px]">
-                          <Box className="h-3 w-3 text-blue-400" />
+                      <td className="py-3 px-4">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-surface-subtle border border-border-subtle font-mono-numeric text-[11px] font-medium text-title">
+                          <Box className="h-3 w-3 text-primary" />
                           {g.targetContainerType?.code || 'Cont'}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-slate-300 font-medium">
-                        {g.shipmentCount} lô hàng
+                      <td className="py-3 px-4 text-center font-mono-numeric font-medium text-body">
+                        {g.shipmentCount} lô
                       </td>
                       <td className="py-3 px-4">
                         <div className="w-32">
-                          <div className="flex justify-between text-[11px] mb-1">
-                            <span className="text-slate-300 font-medium">{volRate}%</span>
-                            <span className="text-slate-500">{g.totalCbm} m³</span>
+                          <div className="flex justify-between text-[11px] mb-1 font-mono-numeric">
+                            <span className="text-title font-bold">{volRate}%</span>
+                            <span className="text-text-secondary">{g.totalCbm} m³</span>
                           </div>
-                          <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                          <div className="w-full bg-border-subtle rounded-full h-1.5 overflow-hidden">
                             <div
-                              className={`h-1.5 rounded-full ${
-                                volRate > 80 ? 'bg-emerald-500' : volRate > 50 ? 'bg-blue-500' : 'bg-amber-500'
+                              className={`h-full rounded-full transition-all duration-300 ${
+                                volRate > 80 ? 'bg-emerald-500' : volRate > 50 ? 'bg-primary' : 'bg-amber-500'
                               }`}
                               style={{ width: `${Math.min(volRate, 100)}%` }}
                             />
@@ -242,59 +268,44 @@ export default function ForwarderDashboardPage() {
                       </td>
                       <td className="py-3 px-4">
                         <div className="w-32">
-                          <div className="flex justify-between text-[11px] mb-1">
-                            <span className="text-slate-300 font-medium">{g.weightFillRate}%</span>
-                            <span className="text-slate-500">{g.totalWeightKg} kg</span>
+                          <div className="flex justify-between text-[11px] mb-1 font-mono-numeric">
+                            <span className="text-title font-bold">{g.weightFillRate}%</span>
+                            <span className="text-text-secondary">{g.totalWeightKg} kg</span>
                           </div>
-                          <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                          <div className="w-full bg-border-subtle rounded-full h-1.5 overflow-hidden">
                             <div
-                              className="h-1.5 rounded-full bg-indigo-500"
+                              className="h-full rounded-full bg-indigo-500 transition-all duration-300"
                               style={{ width: `${Math.min(g.weightFillRate, 100)}%` }}
                             />
                           </div>
                         </div>
                       </td>
-                      <td className="py-3 px-4">
-                        <span
-                          className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold border ${
-                            g.status === 'PROPOSED'
-                              ? 'bg-amber-950/60 text-amber-300 border-amber-800'
-                              : g.status === 'CONFIRMED'
-                              ? 'bg-emerald-950/60 text-emerald-300 border-emerald-800'
-                              : 'bg-slate-800 text-slate-400 border-slate-700'
-                          }`}
-                        >
-                          {g.status === 'PROPOSED'
-                            ? 'Đang đề xuất'
-                            : g.status === 'CONFIRMED'
-                            ? 'Đã chốt ghép'
-                            : g.status}
-                        </span>
+                      <td className="py-3 px-4 text-center">
+                        <StatusBadge status={g.status} size="sm" />
                       </td>
-                      <td className="py-3 px-4 text-right space-x-2">
-                        <Link
-                          href={`/match-groups/${g.id}`}
-                          className="px-2.5 py-1 text-[11px] rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
-                        >
-                          Chi tiết
+                      <td className="py-3 px-4 text-right space-x-2 whitespace-nowrap">
+                        <Link href={`/match-groups/${g.id}`}>
+                          <Button variant="outline" size="sm">Chi tiết</Button>
                         </Link>
                         {g.status === 'PROPOSED' && (
-                          <button
+                          <Button
+                            variant="primary"
+                            size="sm"
                             onClick={() => confirmMutation.mutate(g.id)}
-                            disabled={confirmMutation.isPending}
-                            className="px-2.5 py-1 text-[11px] rounded bg-emerald-700 hover:bg-emerald-600 text-white font-medium transition cursor-pointer"
+                            isLoading={confirmMutation.isPending}
                           >
                             Chốt ghép
-                          </button>
+                          </Button>
                         )}
                         {(g.status === 'PROPOSED' || g.status === 'CONFIRMED') && (
-                          <button
+                          <Button
+                            variant="danger"
+                            size="sm"
                             onClick={() => cancelMutation.mutate(g.id)}
-                            disabled={cancelMutation.isPending}
-                            className="px-2.5 py-1 text-[11px] rounded bg-red-900/60 hover:bg-red-800 text-red-200 border border-red-800 transition cursor-pointer"
+                            isLoading={cancelMutation.isPending}
                           >
                             Hủy
-                          </button>
+                          </Button>
                         )}
                       </td>
                     </tr>
@@ -304,7 +315,7 @@ export default function ForwarderDashboardPage() {
             </table>
           </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

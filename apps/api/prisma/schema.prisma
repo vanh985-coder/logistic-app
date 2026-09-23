@@ -59,6 +59,10 @@ model Company {
   shipments          Shipment[]
   packages           Package[]
   matchGroupShipments MatchGroupShipment[]
+  quotes             Quote[]               @relation("FwdQuotes")
+  bookings           Booking[]             @relation("FwdBookings")
+  cfsBookings        Booking[]             @relation("CfsBookings")
+  loadingProofs      LoadingProof[]
 
   @@index([status, createdAt(sort: Desc)])
   @@map("companies")
@@ -109,6 +113,24 @@ enum ShipmentStatus {
   MATCHING
   GROUPED
   CONFIRMED
+  RECEIVED_CFS
+  SEALED
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+}
+
+enum QuoteStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum BookingStatus {
+  CONFIRMED
+  RECEIVED_CFS
+  SEALED
   IN_TRANSIT
   DELIVERED
   CANCELLED
@@ -191,6 +213,7 @@ model Shipment {
 
   packages         Package[]
   matchGroupShipments MatchGroupShipment[]
+  loadingProofs    LoadingProof[]
 
   @@index([companyId, status, createdAt(sort: Desc)])
   @@index([laneId])
@@ -211,6 +234,7 @@ model Package {
   weightGrams Int
   isFragile   Boolean     @default(false)
   noStack     Boolean     @default(false)
+  dropOrder   Int?
   packageType PackageType @default(BOX)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
@@ -264,20 +288,30 @@ model MatchGroup {
   updatedAt             DateTime            @updatedAt
 
   matchGroupShipments   MatchGroupShipment[]
+  quotes                Quote[]
+  bookings              Booking[]
+  loadingProofs         LoadingProof[]
 
   @@index([laneId, status])
   @@map("match_groups")
 }
 
 model MatchGroupShipment {
-  id           String     @id @default(uuid())
-  companyId    String
-  company      Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  matchGroupId String
-  matchGroup   MatchGroup @relation(fields: [matchGroupId], references: [id], onDelete: Cascade)
-  shipmentId   String
-  shipment     Shipment   @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
-  joinedAt     DateTime   @default(now())
+  id                 String     @id @default(uuid())
+  companyId          String
+  company            Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  matchGroupId       String
+  matchGroup         MatchGroup @relation(fields: [matchGroupId], references: [id], onDelete: Cascade)
+  shipmentId         String
+  shipment           Shipment   @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  dropOrder          Int        @default(1)
+  deliveryDestination String?
+  actualPackageCount Int?
+  isDiscrepant       Boolean    @default(false)
+  discrepancyReason  String?
+  tallyStatus        String     @default("PENDING")
+  tallyAt            DateTime?
+  joinedAt           DateTime   @default(now())
 
   @@unique([matchGroupId, shipmentId])
   @@index([companyId, matchGroupId])
@@ -285,4 +319,94 @@ model MatchGroupShipment {
   @@index([shipmentId])
   @@map("match_group_shipments")
 }
+
+model Quote {
+  id               String       @id @default(uuid())
+  matchGroupId     String
+  matchGroup       MatchGroup   @relation(fields: [matchGroupId], references: [id], onDelete: Cascade)
+  fwdCompanyId     String
+  fwdCompany       Company      @relation("FwdQuotes", fields: [fwdCompanyId], references: [id], onDelete: Cascade)
+  status           QuoteStatus  @default(PENDING)
+  oceanFreight     BigInt
+  handlingFee      BigInt
+  documentationFee BigInt
+  surcharges       BigInt
+  vatRateBps       Int          @default(1000)
+  vatAmount        BigInt
+  totalAmount      BigInt
+  transitDays      Int
+  validUntil       DateTime
+  notes            String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  bookings         Booking[]
+
+  @@index([matchGroupId, status])
+  @@index([fwdCompanyId])
+  @@map("quotes")
+}
+
+model Booking {
+  id            String        @id @default(uuid())
+  bookingNumber String        @unique
+  matchGroupId  String
+  matchGroup    MatchGroup    @relation(fields: [matchGroupId], references: [id], onDelete: Cascade)
+  quoteId       String
+  quote         Quote         @relation(fields: [quoteId], references: [id])
+  fwdCompanyId  String
+  fwdCompany    Company       @relation("FwdBookings", fields: [fwdCompanyId], references: [id], onDelete: Cascade)
+  cfsCompanyId  String?
+  cfsCompany    Company?      @relation("CfsBookings", fields: [cfsCompanyId], references: [id])
+  status        BookingStatus @default(CONFIRMED)
+  totalAmount   BigInt
+  containerNo   String?
+  sealNo        String?
+  sealedAt      DateTime?
+  notes         String?
+  confirmedAt   DateTime      @default(now())
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  loadingProofs LoadingProof[]
+
+  @@index([matchGroupId])
+  @@index([fwdCompanyId])
+  @@index([cfsCompanyId])
+  @@map("bookings")
+}
+
+enum LoadingProofType {
+  INBOUND_INSPECTION
+  LAYER_PACKED
+  SEAL_CLOSED
+}
+
+model LoadingProof {
+  id           String           @id @default(uuid())
+  bookingId    String
+  booking      Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  matchGroupId String
+  matchGroup   MatchGroup       @relation(fields: [matchGroupId], references: [id], onDelete: Cascade)
+  shipmentId   String?
+  shipment     Shipment?        @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  companyId    String
+  company      Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  proofType    LoadingProofType
+  layerIndex   Int?
+  fileKey      String
+  fileName     String
+  fileSize     Int
+  mimeType     String
+  notes        String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([bookingId, proofType])
+  @@index([matchGroupId])
+  @@index([shipmentId])
+  @@index([companyId])
+  @@map("loading_proofs")
+}
+
 

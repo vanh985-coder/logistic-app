@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   MatchGroupStatus,
   ShipmentStatus,
+  BookingStatus,
   UserRole,
   cbmFromVolumeMm3,
   kgFromWeightGrams,
@@ -265,7 +266,15 @@ export class MatchingService {
   async confirmMatchGroup(id: string) {
     const group = await (this.prisma as any).matchGroup.findUnique({
       where: { id },
-      include: { matchGroupShipments: true },
+      include: {
+        matchGroupShipments: {
+          include: {
+            shipment: {
+              include: { packages: true },
+            },
+          },
+        },
+      },
     });
 
     if (!group) {
@@ -275,6 +284,23 @@ export class MatchingService {
     if (group.status !== MatchGroupStatus.PROPOSED) {
       throw new BadRequestException(
         `Cannot confirm match group with status "${group.status}". Only PROPOSED groups can be confirmed.`,
+      );
+    }
+
+    if (!group.matchGroupShipments || group.matchGroupShipments.length === 0) {
+      throw new BadRequestException(
+        'Không thể xác nhận kế hoạch đóng container khi nhóm không có lô hàng nào.',
+      );
+    }
+
+    const totalPackages = group.matchGroupShipments.reduce((sum: number, mgs: any) => {
+      const pkgCount = mgs.shipment?.packages?.length ?? mgs.shipment?.totalPackages ?? 0;
+      return sum + pkgCount;
+    }, 0);
+
+    if (totalPackages === 0) {
+      throw new BadRequestException(
+        'Không thể xác nhận kế hoạch đóng container khi nhóm không có kiện hàng nào.',
       );
     }
 
@@ -492,6 +518,168 @@ export class MatchingService {
   }
 
   /**
+   * Aggregate metrics for FWD Dashboard.
+   */
+  async getFwdMetrics(fwdCompanyId: string, userRole?: string) {
+    const isPlatformAdmin = userRole === 'PLATFORM_ADMIN' || userRole === 'ADMIN';
+
+    const [availableGroupsCount, myQuotesCount, activeBookings, allBookings] = await Promise.all([
+      (this.prisma.unsafeGlobal as any).matchGroup.count({
+        where: { status: MatchGroupStatus.PROPOSED },
+      }),
+      (this.prisma.unsafeGlobal as any).quote.count({
+        where: isPlatformAdmin ? {} : { fwdCompanyId },
+      }),
+      (this.prisma.unsafeGlobal as any).booking.count({
+        where: {
+          ...(isPlatformAdmin ? {} : { fwdCompanyId }),
+          status: {
+            in: [
+              BookingStatus.CONFIRMED,
+              BookingStatus.RECEIVED_CFS,
+              BookingStatus.SEALED,
+              BookingStatus.IN_TRANSIT,
+            ],
+          },
+        },
+      }),
+      (this.prisma.unsafeGlobal as any).booking.findMany({
+        where: isPlatformAdmin ? {} : { fwdCompanyId },
+        include: {
+          matchGroup: {
+            select: { totalCbmMm3: true },
+          },
+        },
+      }),
+    ]);
+
+    const totalCbmMm3 = allBookings.reduce(
+      (sum: bigint, b: any) => sum + BigInt(b.matchGroup?.totalCbmMm3 || 0),
+      0n,
+    );
+
+    return {
+      availableGroupsCount,
+      myQuotesCount,
+      activeBookingsCount: activeBookings,
+      totalCbmConsolidated: cbmFromVolumeMm3(totalCbmMm3),
+      totalCbmMm3: totalCbmMm3.toString(),
+    };
+  }
+
+  /**
+   * Shipper opts out / withdraws their shipment from a match group.
+   */
+  async withdrawShipment(matchGroupId: string, shipmentId: string, user: any) {
+    const matchGroup = await (this.prisma.unsafeGlobal as any).matchGroup.findUnique({
+      where: { id: matchGroupId },
+      include: {
+        targetContainerType: true,
+        matchGroupShipments: {
+          include: { shipment: true },
+        },
+      },
+    });
+
+    if (!matchGroup) {
+      throw new NotFoundException('Match group not found');
+    }
+
+    if (
+      matchGroup.status === MatchGroupStatus.CLOSED ||
+      matchGroup.status === MatchGroupStatus.CANCELLED
+    ) {
+      throw new BadRequestException(
+        `Cannot withdraw shipment from match group with status ${matchGroup.status}`,
+      );
+    }
+
+    const mgShipment = matchGroup.matchGroupShipments.find(
+      (m: any) => m.shipmentId === shipmentId,
+    );
+    if (!mgShipment) {
+      throw new NotFoundException('Shipment is not part of this match group');
+    }
+
+    const isOwner =
+      mgShipment.shipment?.companyId === user.companyId ||
+      mgShipment.companyId === user.companyId;
+    const isAdmin = [UserRole.PLATFORM_ADMIN, UserRole.ADMIN].includes(user.role);
+    if (!isOwner && !isAdmin) {
+      throw new ForbiddenException('You do not have permission to withdraw this shipment');
+    }
+
+    await (this.prisma.unsafeGlobal as any).$transaction(async (tx: any) => {
+      await tx.matchGroupShipment.delete({
+        where: {
+          matchGroupId_shipmentId: {
+            matchGroupId,
+            shipmentId,
+          },
+        },
+      });
+
+      await tx.shipment.update({
+        where: { id: shipmentId },
+        data: { status: ShipmentStatus.SUBMITTED },
+      });
+
+      const remaining = matchGroup.matchGroupShipments.filter(
+        (m: any) => m.shipmentId !== shipmentId,
+      );
+      if (remaining.length === 0) {
+        await tx.matchGroup.update({
+          where: { id: matchGroupId },
+          data: {
+            status: MatchGroupStatus.CANCELLED,
+            totalCbmMm3: 0n,
+            totalWeightGrams: 0n,
+            volumeFillBps: 0,
+            weightFillBps: 0,
+          },
+        });
+      } else {
+        const totalCbmMm3 = remaining.reduce(
+          (sum: bigint, m: any) => sum + BigInt(m.shipment.volumeMm3),
+          0n,
+        );
+        const totalWeightGrams = remaining.reduce(
+          (sum: bigint, m: any) => sum + BigInt(m.shipment.weightGrams),
+          0n,
+        );
+        const containerVol = BigInt(matchGroup.targetContainerType.volumeMm3);
+        const containerMaxPayload = BigInt(
+          matchGroup.targetContainerType.maxPayloadGram,
+        );
+
+        const volumeFillBps =
+          containerVol > 0n
+            ? Number((totalCbmMm3 * 10000n) / containerVol)
+            : 0;
+        const weightFillBps =
+          containerMaxPayload > 0n
+            ? Number((totalWeightGrams * 10000n) / containerMaxPayload)
+            : 0;
+
+        await tx.matchGroup.update({
+          where: { id: matchGroupId },
+          data: {
+            totalCbmMm3,
+            totalWeightGrams,
+            volumeFillBps,
+            weightFillBps,
+          },
+        });
+      }
+    });
+
+    return {
+      success: true,
+      message: 'Shipment withdrawn successfully. Status returned to SUBMITTED.',
+    };
+  }
+
+  /**
    * Fetches unassigned SUBMITTED shipments available for consolidation.
    */
   async getUnassignedShipments(laneId?: string) {
@@ -612,6 +800,11 @@ export class MatchingService {
         id: m.id,
         shipmentId: m.shipmentId,
         joinedAt: m.joinedAt.toISOString(),
+        dropOrder: m.dropOrder ?? null,
+        deliveryDestination: m.deliveryDestination ?? null,
+        tallyStatus: m.tallyStatus ?? null,
+        tallyNotes: m.tallyNotes ?? null,
+        tallyAt: m.tallyAt ? m.tallyAt.toISOString() : null,
         shipment: m.shipment
           ? {
               id: m.shipment.id,

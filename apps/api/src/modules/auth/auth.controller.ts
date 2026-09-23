@@ -22,23 +22,39 @@ const COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  /**
+   * Cấu hình cookie cho refreshToken.
+   *
+   * TUNNEL_MODE=true:
+   * Dùng sameSite: 'none' + secure: true để trình duyệt gửi kèm cookie refreshToken
+   * trong các request cross-site (khi Web và API chạy trên hai subdomain ngrok khác nhau).
+   *
+   * ⚠️ CẢNH BÁO BẢO MẬT:
+   * Cấu hình này CHỈ DÙNG CHO DEMO QUA TUNNEL (NGROK).
+   * TUYỆT ĐỐI KHÔNG DÙNG Ở PRODUCTION nhằm đảm bảo chống tấn công CSRF theo chuẩn ADR-0006.
+   *
+   * Mặc định (Production & Local Dev thông thường):
+   * sameSite: 'strict', secure: NODE_ENV === 'production'
+   */
+  private getCookieOptions() {
+    const isTunnelMode = process.env.TUNNEL_MODE === 'true';
+    return {
+      httpOnly: true,
+      secure: isTunnelMode ? true : process.env.NODE_ENV === 'production',
+      sameSite: (isTunnelMode ? 'none' : 'strict') as 'none' | 'strict',
+      path: '/',
+    };
+  }
+
   private setRefreshTokenCookie(res: Response, token: string) {
     res.cookie(REFRESH_TOKEN_COOKIE, token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      ...this.getCookieOptions(),
       maxAge: COOKIE_MAX_AGE_MS,
-      path: '/',
     });
   }
 
   private clearRefreshTokenCookie(res: Response) {
-    res.clearCookie(REFRESH_TOKEN_COOKIE, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      path: '/',
-    });
+    res.clearCookie(REFRESH_TOKEN_COOKIE, this.getCookieOptions());
   }
 
   @Public()

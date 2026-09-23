@@ -92,6 +92,7 @@ jobs:
       - name: Run tests
         env:
           DATABASE_URL: "postgresql://logix:logix_secret_dev@localhost:5432/logix3d_db?schema=public"
+          DATABASE_URL_TEST: "postgresql://logix:logix_secret_dev@localhost:5432/logix3d_test?schema=public"
           REDIS_URL: "redis://localhost:6379"
           JWT_SECRET: "logix3d-super-secret-jwt-key-min-32-chars-2026"
         run: |

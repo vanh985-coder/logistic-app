@@ -10,7 +10,13 @@ import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { CalculatePackingDto } from './dto/packing-request.dto';
-import { ContainerDimension, PackageItem, PackingResult } from '@logix/packing';
+import {
+  ContainerDimension,
+  PackageItem,
+  PackingResult,
+  MultiStrategyPackingResult,
+  packMultiStrategies,
+} from '@logix/packing';
 
 export const PACKING_QUEUE_NAME = 'packing_queue';
 
@@ -67,6 +73,7 @@ export class PackingService implements OnModuleDestroy {
           p.noStack,
           p.rotatable,
           p.dropOrder ?? 1,
+          p.companyId ?? '',
         ])
         .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
     });
@@ -123,11 +130,13 @@ export class PackingService implements OnModuleDestroy {
       let dropIdx = 1;
 
       for (const mgs of matchGroup.matchGroupShipments) {
+        const dropOrder = mgs.dropOrder ?? dropIdx;
         for (const pkg of mgs.shipment.packages) {
           packages.push({
             id: pkg.id,
             sku: pkg.packageCode,
             name: pkg.description || undefined,
+            companyId: mgs.companyId,
             lengthMm: pkg.lengthMm,
             widthMm: pkg.widthMm,
             heightMm: pkg.heightMm,
@@ -135,7 +144,7 @@ export class PackingService implements OnModuleDestroy {
             fragile: pkg.isFragile,
             noStack: pkg.noStack,
             rotatable: true,
-            dropOrder: dropIdx,
+            dropOrder,
           });
         }
         dropIdx++;
@@ -150,19 +159,24 @@ export class PackingService implements OnModuleDestroy {
   }
 
   /**
-   * Enqueues a 3D packing job or returns cached result if available.
+   * Computes multi-strategy 3D packing with Redis caching (v2 key).
    */
   async calculatePacking(dto: CalculatePackingDto) {
     const { container, packages } = await this.resolvePackingInput(dto);
     const inputHash = this.computeInputHash(container, packages);
 
-    // 1. Check Redis Cache (TTL = 1 hour)
-    const cacheKey = `packing:result:${inputHash}`;
-    const cachedData = await this.redisService.getClient().get(cacheKey);
+    // 1. Check Redis Cache (TTL = 1 hour, key: packing:v2:multi:{hash})
+    const cacheKey = `packing:v2:multi:${inputHash}`;
+    let cachedData: string | null = null;
+    try {
+      cachedData = await this.redisService.getClient().get(cacheKey);
+    } catch (e: any) {
+      this.logger.warn(`Redis get cache error: ${e.message}`);
+    }
 
     if (cachedData) {
       this.logger.log(`Cache HIT for packing inputHash: ${inputHash}`);
-      const parsedResult = JSON.parse(cachedData) as PackingResult;
+      const parsedResult = JSON.parse(cachedData) as MultiStrategyPackingResult;
       return {
         statusCode: 200,
         status: 'completed',
@@ -172,28 +186,22 @@ export class PackingService implements OnModuleDestroy {
       };
     }
 
-    // 2. Cache MISS: Enqueue BullMQ job
-    this.logger.log(`Cache MISS for packing inputHash: ${inputHash}. Enqueuing job in BullMQ...`);
-    const job = await this.packingQueue.add(
-      '3d_packing_calculation',
-      {
-        container,
-        packages,
-        options: dto.options,
-        inputHash,
-      },
-      {
-        removeOnComplete: { age: 3600 },
-        removeOnFail: { age: 86400 },
-      },
-    );
+    // 2. Direct fast calculation across all 3 strategies (~510ms)
+    this.logger.log(`Computing 3 packing strategies for inputHash: ${inputHash}...`);
+    const multiResult = packMultiStrategies(container, packages, dto.options);
+
+    try {
+      await this.redisService.getClient().setex(cacheKey, 3600, JSON.stringify(multiResult));
+    } catch (e: any) {
+      this.logger.warn(`Redis set cache error: ${e.message}`);
+    }
 
     return {
-      statusCode: 202,
-      status: 'processing',
-      jobId: job.id,
+      statusCode: 200,
+      status: 'completed',
+      cached: false,
       inputHash,
-      message: 'Packing calculation job accepted. Poll /packing/jobs/:jobId for status.',
+      result: multiResult,
     };
   }
 
