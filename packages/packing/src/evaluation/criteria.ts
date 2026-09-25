@@ -390,18 +390,6 @@ export function evaluateStrategyCriteria(
     },
   };
 
-  // Weighted overall summary score
-  const overallScore = Math.round(
-    (volScore * 0.25 +
-      wtScore * 0.10 +
-      Math.max(0, 100 - cogScore * 5) * 0.15 +
-      stabScore * 0.15 +
-      compatScore * 0.10 +
-      lifoScore * 0.15 +
-      accessScore * 0.10) *
-      100,
-  ) / 100;
-
   return {
     strategy,
     strategyName: strategyMeta[strategy].name,
@@ -421,6 +409,5 @@ export function evaluateStrategyCriteria(
       lifoCompliance,
       consigneeAccessibility,
     },
-    overallScore,
   };
 }

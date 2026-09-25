@@ -183,7 +183,7 @@ export function StrategyEvaluationPanel({
     <div className="rounded-xl bg-slate-900/90 border border-slate-800 p-4 space-y-3 text-slate-200 shadow-lg">
       {/* 1. Hàng đầu tiên: Số kiện xếp được + Cảnh báo bỏ lại kiện */}
       <div
-        className={`p-3 rounded-lg border flex items-center justify-between gap-3 ${
+        className={`p-2.5 rounded-lg border flex items-center justify-between gap-3 ${
           unplacedCount === 0
             ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-200'
             : unplacedAlert === 'CRITICAL'
@@ -193,24 +193,26 @@ export function StrategyEvaluationPanel({
       >
         <div className="flex items-center gap-2.5">
           {unplacedCount === 0 ? (
-            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
           ) : (
             <AlertTriangle
-              className={`w-5 h-5 shrink-0 ${
+              className={`w-4 h-4 shrink-0 ${
                 unplacedAlert === 'CRITICAL' ? 'text-rose-400' : 'text-amber-400'
               }`}
             />
           )}
           <div>
             <div className="text-xs font-bold font-mono tracking-wide">
-              Số kiện xếp được: {placedCount}/{totalCount} kiện
+              {unplacedCount > 0
+                ? `Số kiện xếp được ${placedCount}/${totalCount} — bỏ lại ${unplacedCount} kiện`
+                : `Số kiện xếp được ${placedCount}/${totalCount} — xếp đủ 100%`}
             </div>
             <div className="text-[11px] opacity-90">
               {unplacedCount === 0 ? (
-                <span>Vừa vặn 100% trong 1 container — không có kiện tồn lại</span>
+                <span>Toàn bộ kiện đã được xếp trong container duy nhất</span>
               ) : (
                 <span>
-                  Bỏ lại <strong>{unplacedCount} kiện</strong> ({unplacedPercent.toFixed(1)}%) — cần bố trí thêm container phụ
+                  Bỏ lại <strong>{unplacedCount} kiện</strong> ({unplacedPercent.toFixed(1)}%) — cần thuê thêm container phụ
                 </span>
               )}
             </div>
@@ -233,15 +235,15 @@ export function StrategyEvaluationPanel({
       </div>
 
       {/* 2. Bảng 7 tiêu chí đánh giá định tính */}
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         <div className="flex items-center justify-between text-[11px] text-slate-400 font-medium px-1">
-          <span>7 TIÊU CHÍ ĐÁNH GIÁ CHẤT LƯỢNG ({strategyName})</span>
+          <span>7 TIÊU CHÍ ĐÁNH GIÁ CHẤT LƯỢNG</span>
           <span className="text-[10px] text-slate-500 flex items-center gap-1">
             <Info className="w-3 h-3" /> Rê chuột vào thanh để xem ý nghĩa
           </span>
         </div>
 
-        <div className="space-y-1.5">
+        <div className="space-y-1">
           {criteriaList.map((c) => {
             const criterionKey = c.id || (c as any).key || '';
             const config = RATING_CONFIG[c.rating] || RATING_CONFIG[c.ratingLabel] || RATING_CONFIG.TRUNG_BINH;
@@ -252,7 +254,7 @@ export function StrategyEvaluationPanel({
             return (
               <div
                 key={criterionKey || c.name}
-                className="relative group p-2 rounded-lg bg-slate-950/50 hover:bg-slate-800/60 border border-slate-800/80 transition-colors cursor-help"
+                className="relative group py-1.5 px-2.5 rounded-lg bg-slate-950/50 hover:bg-slate-800/60 border border-slate-800/80 transition-colors cursor-help"
                 onMouseEnter={() => setActiveTooltip(criterionKey)}
                 onMouseLeave={() => setActiveTooltip(null)}
               >

@@ -9,7 +9,6 @@ import {
   PackingResult,
   PackageMetadata,
   PackedPlacement,
-  PackingStrategy,
   MultiStrategyPackingResult,
 } from './types';
 import { PackingCoGIndicator } from './PackingCoGIndicator';
@@ -30,9 +29,6 @@ import {
   SkipForward,
   PlayCircle,
   FileSpreadsheet,
-  Maximize2,
-  Users,
-  ArrowDownToLine,
   X,
   Eye,
   EyeOff,
@@ -53,32 +49,6 @@ export const SHIPPER_COLORS = [
   { id: 10, color: '#4D7C0F', name: 'Olive' },
   { id: 11, color: '#B45309', name: 'Amber' },
   { id: 12, color: '#64748B', name: 'Steel' },
-];
-
-const STRATEGIES: Array<{
-  id: PackingStrategy;
-  name: string;
-  sub: string;
-  icon: React.ReactNode;
-}> = [
-  {
-    id: 'MAX_VOLUME',
-    name: 'Tối ưu thể tích',
-    sub: 'Ưu tiên: Tận dụng tối đa không gian container',
-    icon: <Maximize2 className="h-4 w-4" />,
-  },
-  {
-    id: 'CONSIGNEE_GROUPED',
-    name: 'Gom theo chủ hàng',
-    sub: 'Ưu tiên: Kiện cùng chủ hàng nằm liền khối, dỡ và kiểm đếm tập trung',
-    icon: <Users className="h-4 w-4" />,
-  },
-  {
-    id: 'LIFO_PRIORITY',
-    name: 'Ưu tiên thứ tự dỡ',
-    sub: 'Ưu tiên: Dỡ hàng theo hành trình từ điểm gần đến điểm xa, không đảo hàng',
-    icon: <ArrowDownToLine className="h-4 w-4" />,
-  },
 ];
 
 // Dynamically import Three.js Scene to prevent SSR canvas errors in Next.js
@@ -104,10 +74,8 @@ export function PackingViewer3D({ matchGroup }: PackingViewer3DProps) {
   const [isCached, setIsCached] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Packing strategy data states
-  const [multiStrategyResult, setMultiStrategyResult] = useState<MultiStrategyPackingResult | null>(null);
-  const [legacyResult, setLegacyResult] = useState<PackingResult | null>(null);
-  const [activeStrategy, setActiveStrategy] = useState<PackingStrategy>('MAX_VOLUME');
+  // Single CONSIGNEE_GROUPED packing result state
+  const [packingResult, setPackingResult] = useState<PackingResult | null>(null);
 
   // Interactive selection and playback states
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
@@ -193,13 +161,8 @@ export function PackingViewer3D({ matchGroup }: PackingViewer3DProps) {
     return { packagesMap: map, shipperLegends: legends };
   }, [matchGroup]);
 
-  // Active Strategy Result (Cached in React state — 0ms tab switching)
-  const activePackingResult: PackingResult | null = useMemo(() => {
-    if (multiStrategyResult?.strategies) {
-      return multiStrategyResult.strategies[activeStrategy] || null;
-    }
-    return legacyResult;
-  }, [multiStrategyResult, legacyResult, activeStrategy]);
+  // Active Packing Result (Single CONSIGNEE_GROUPED strategy)
+  const activePackingResult: PackingResult | null = packingResult;
 
   // Precomputed physical unloading sequence for active strategy
   const unloadingSequence = useMemo(() => {
@@ -266,9 +229,9 @@ export function PackingViewer3D({ matchGroup }: PackingViewer3DProps) {
       if (res.result && (res.cached || res.status === 'completed')) {
         const rawResult = res.result;
         if ('strategies' in rawResult && rawResult.strategies) {
-          setMultiStrategyResult(rawResult as MultiStrategyPackingResult);
+          setPackingResult(rawResult.strategies['CONSIGNEE_GROUPED'] || Object.values(rawResult.strategies)[0]);
         } else {
-          setLegacyResult(rawResult as PackingResult);
+          setPackingResult(rawResult as PackingResult);
         }
         setIsCached(Boolean(res.cached));
         setIsLoading(false);
@@ -295,9 +258,9 @@ export function PackingViewer3D({ matchGroup }: PackingViewer3DProps) {
             if (jobRes.status === 'completed' && jobRes.result) {
               const rawResult = jobRes.result;
               if ('strategies' in rawResult && rawResult.strategies) {
-                setMultiStrategyResult(rawResult as MultiStrategyPackingResult);
+                setPackingResult(rawResult.strategies['CONSIGNEE_GROUPED'] || Object.values(rawResult.strategies)[0]);
               } else {
-                setLegacyResult(rawResult as PackingResult);
+                setPackingResult(rawResult as PackingResult);
               }
               setIsCached(false);
               setIsLoading(false);
@@ -346,14 +309,6 @@ export function PackingViewer3D({ matchGroup }: PackingViewer3DProps) {
     };
   }, [matchGroup.id]);
 
-  // Strategy tab switch handler (reads from memory, 0ms latency)
-  const handleSelectStrategy = (strat: PackingStrategy) => {
-    setActiveStrategy(strat);
-    setSelectedIndex(null);
-    setCurrentStep(1);
-    setIsPlaying(false);
-  };
-
   // Toggle unloading playback
   const handleToggleUnloading = () => {
     if (isUnloading) {
@@ -371,7 +326,7 @@ export function PackingViewer3D({ matchGroup }: PackingViewer3DProps) {
     if (!activePackingResult) return;
     exportStowagePlanToExcel({
       matchGroup,
-      strategy: activeStrategy,
+      strategy: 'CONSIGNEE_GROUPED',
       packingResult: activePackingResult,
       packagesMap,
       containerDim,
@@ -403,7 +358,7 @@ export function PackingViewer3D({ matchGroup }: PackingViewer3DProps) {
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="text-base font-bold text-white tracking-tight">
-                  Mô Phỏng Không Gian Xếp Container 3D (3D Packing Engine)
+                  Phương án xếp: Gom theo chủ hàng — hàng cùng công ty nằm liền khối, thứ tự dỡ theo LIFO
                 </h3>
                 {isCached ? (
                   <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
@@ -493,10 +448,10 @@ export function PackingViewer3D({ matchGroup }: PackingViewer3DProps) {
 
           <div className="max-w-md mx-auto space-y-2">
             <h4 className="text-sm font-bold text-white">
-              Đang Tối Ưu Hóa Cả 3 Chiến Lược Xếp Container 3D...
+              Đang Tối Ưu Hóa Xếp Hàng Theo Chủ Hàng...
             </h4>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Động cơ 3D Extreme Point đang tính toán đồng thời 3 phương án: Tối ưu thể tích, Gom theo chủ hàng, và Ưu tiên thứ tự dỡ.
+              Động cơ 3D Extreme Point đang tối ưu vị trí để các kiện cùng công ty nằm liền khối, sẵn sàng thứ tự dỡ theo LIFO.
             </p>
           </div>
 
@@ -506,7 +461,7 @@ export function PackingViewer3D({ matchGroup }: PackingViewer3DProps) {
               <div className="h-full bg-gradient-to-r from-blue-500 to-emerald-400 rounded-full animate-pulse w-3/4" />
             </div>
             <div className="text-[11px] font-mono text-slate-400 flex justify-between">
-              <span>Đang tính toán 3 chiến lược song song</span>
+              <span>Gom theo chủ hàng (Consignee Grouped)</span>
               <span>{elapsedSeconds}s</span>
             </div>
           </div>
@@ -525,50 +480,7 @@ export function PackingViewer3D({ matchGroup }: PackingViewer3DProps) {
         </div>
       ) : activePackingResult ? (
         <div className="space-y-4">
-          {/* 1. THREE STRATEGY TABS */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-            {STRATEGIES.map((strat) => {
-              const isSelected = activeStrategy === strat.id;
-              return (
-                <button
-                  key={strat.id}
-                  onClick={() => handleSelectStrategy(strat.id)}
-                  className={`p-3 rounded-xl text-left border transition-all duration-200 relative ${
-                    isSelected
-                      ? 'bg-blue-600/20 border-blue-500 text-white shadow-lg ring-1 ring-blue-500/50'
-                      : 'bg-slate-900/70 border-slate-800/90 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <div className="flex items-center gap-2">
-                      <div
-                        className={`p-1.5 rounded-lg shrink-0 ${
-                          isSelected ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-800 text-slate-400'
-                        }`}
-                      >
-                        {strat.icon}
-                      </div>
-                      <span className="text-xs font-bold truncate tracking-tight">{strat.name}</span>
-                    </div>
-                    {isSelected && (
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                        Đang chọn
-                      </span>
-                    )}
-                  </div>
-                  <div
-                    className={`text-[11px] leading-snug pl-0.5 ${
-                      isSelected ? 'text-blue-200/90' : 'text-slate-500'
-                    }`}
-                  >
-                    {strat.sub}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* 2. UNLOADING ANIMATION PLAYER BAR (Conditional when active) */}
+          {/* UNLOADING ANIMATION PLAYER BAR (Conditional when active) */}
           {isUnloading && (
             <div className="p-3 sm:p-4 rounded-xl bg-slate-900 border-2 border-amber-500/60 shadow-2xl flex flex-col md:flex-row items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
               <div className="flex items-center gap-2.5 shrink-0">
@@ -740,7 +652,7 @@ export function PackingViewer3D({ matchGroup }: PackingViewer3DProps) {
               {/* Strategy Evaluation Qualitative Scorecard (7 Criteria + Top Placed/Unplaced Banner) */}
               <StrategyEvaluationPanel
                 evaluation={activePackingResult.evaluation}
-                strategyName={STRATEGIES.find((s) => s.id === activeStrategy)?.name || activeStrategy}
+                strategyName="Gom theo chủ hàng"
               />
 
               {/* Selected Package Details Panel (Includes Shipper, Delivery Destination, SKU, Dimensions) */}

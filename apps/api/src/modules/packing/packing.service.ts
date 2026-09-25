@@ -14,8 +14,7 @@ import {
   ContainerDimension,
   PackageItem,
   PackingResult,
-  MultiStrategyPackingResult,
-  packMultiStrategies,
+  packContainers,
 } from '@logix/packing';
 
 export const PACKING_QUEUE_NAME = 'packing_queue';
@@ -159,14 +158,14 @@ export class PackingService implements OnModuleDestroy {
   }
 
   /**
-   * Computes multi-strategy 3D packing with Redis caching (v2 key).
+   * Computes single-strategy CONSIGNEE_GROUPED 3D packing with Redis caching (v3 key).
    */
   async calculatePacking(dto: CalculatePackingDto) {
     const { container, packages } = await this.resolvePackingInput(dto);
     const inputHash = this.computeInputHash(container, packages);
 
-    // 1. Check Redis Cache (TTL = 1 hour, key: packing:v2:multi:{hash})
-    const cacheKey = `packing:v2:multi:${inputHash}`;
+    // 1. Check Redis Cache (TTL = 1 hour, key: packing:v3:consignee:{hash})
+    const cacheKey = `packing:v3:consignee:${inputHash}`;
     let cachedData: string | null = null;
     try {
       cachedData = await this.redisService.getClient().get(cacheKey);
@@ -176,7 +175,7 @@ export class PackingService implements OnModuleDestroy {
 
     if (cachedData) {
       this.logger.log(`Cache HIT for packing inputHash: ${inputHash}`);
-      const parsedResult = JSON.parse(cachedData) as MultiStrategyPackingResult;
+      const parsedResult = JSON.parse(cachedData) as PackingResult;
       return {
         statusCode: 200,
         status: 'completed',
@@ -186,12 +185,15 @@ export class PackingService implements OnModuleDestroy {
       };
     }
 
-    // 2. Direct fast calculation across all 3 strategies (~510ms)
-    this.logger.log(`Computing 3 packing strategies for inputHash: ${inputHash}...`);
-    const multiResult = packMultiStrategies(container, packages, dto.options);
+    // 2. Direct fast calculation: CONSIGNEE_GROUPED strategy only
+    this.logger.log(`Computing CONSIGNEE_GROUPED packing for inputHash: ${inputHash}...`);
+    const packingResult = packContainers(container, packages, {
+      ...dto.options,
+      strategy: 'CONSIGNEE_GROUPED',
+    });
 
     try {
-      await this.redisService.getClient().setex(cacheKey, 3600, JSON.stringify(multiResult));
+      await this.redisService.getClient().setex(cacheKey, 3600, JSON.stringify(packingResult));
     } catch (e: any) {
       this.logger.warn(`Redis set cache error: ${e.message}`);
     }
@@ -201,7 +203,7 @@ export class PackingService implements OnModuleDestroy {
       status: 'completed',
       cached: false,
       inputHash,
-      result: multiResult,
+      result: packingResult,
     };
   }
 

@@ -3,7 +3,7 @@
 import React, { useState, use } from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchApi } from '@/lib/api-client';
+import { fetchApi, API_BASE_URL, getAccessToken } from '@/lib/api-client';
 import { useAuth } from '@/contexts/auth-context';
 import {
   ArrowLeft,
@@ -137,10 +137,12 @@ export default function CfsOperationPage({ params }: OperationPageProps) {
     if (layerIndex) formData.append('layerIndex', String(layerIndex));
 
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/loading-proofs/upload`, {
+      const token = getAccessToken();
+      await fetch(`${API_BASE_URL}/loading-proofs/upload`, {
         method: 'POST',
         body: formData,
         credentials: 'include',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
       refetchProofs();
       setStatusMessage({ type: 'success', text: '✓ Đã tải ảnh nghiệm thu lên MinIO an toàn!' });

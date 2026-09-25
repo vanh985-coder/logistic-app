@@ -22,6 +22,8 @@ export interface ValidatedImage {
 export class StorageService implements OnModuleInit {
   private readonly logger = new Logger(StorageService.name);
   private readonly s3Client: S3Client;
+  /** Signs download URLs with the browser-reachable endpoint (MINIO_PUBLIC_URL) */
+  private readonly presignClient: S3Client;
   private readonly defaultBucket: string;
 
   constructor() {
@@ -32,16 +34,28 @@ export class StorageService implements OnModuleInit {
 
     this.defaultBucket = process.env.MINIO_BUCKET_PROOFS || 'loading-proofs';
 
+    const credentials = {
+      accessKeyId: process.env.MINIO_ROOT_USER || 'logix_minio_admin',
+      secretAccessKey:
+        process.env.MINIO_ROOT_PASSWORD || 'logix_minio_secret_key',
+    };
+
     this.s3Client = new S3Client({
       endpoint: `${protocol}://${endpointHost}:${endpointPort}`,
       region: 'us-east-1',
       forcePathStyle: true,
-      credentials: {
-        accessKeyId: process.env.MINIO_ROOT_USER || 'logix_minio_admin',
-        secretAccessKey:
-          process.env.MINIO_ROOT_PASSWORD || 'logix_minio_secret_key',
-      },
+      credentials,
     });
+
+    const publicUrl = process.env.MINIO_PUBLIC_URL;
+    this.presignClient = publicUrl
+      ? new S3Client({
+          endpoint: publicUrl,
+          region: 'us-east-1',
+          forcePathStyle: true,
+          credentials,
+        })
+      : this.s3Client;
   }
 
   async onModuleInit() {
@@ -164,7 +178,7 @@ export class StorageService implements OnModuleInit {
       Bucket: bucket,
       Key: key,
     });
-    return getSignedUrl(this.s3Client, command, {
+    return getSignedUrl(this.presignClient, command, {
       expiresIn: expiresInSeconds,
     });
   }

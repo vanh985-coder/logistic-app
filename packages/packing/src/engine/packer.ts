@@ -852,12 +852,12 @@ export function packMultiStrategies(
     results[strat] = packer.pack(packages);
   }
 
-  let bestStrat: PackingStrategy = 'MAX_VOLUME';
-  let highestOverall = -1;
+  let bestStrat: PackingStrategy = 'CONSIGNEE_GROUPED';
+  let highestFill = -1;
   for (const strat of strategies) {
-    const score = results[strat].evaluation?.overallScore ?? 0;
-    if (score > highestOverall) {
-      highestOverall = score;
+    const rate = results[strat].fillRateBps;
+    if (rate > highestFill) {
+      highestFill = rate;
       bestStrat = strat;
     }
   }

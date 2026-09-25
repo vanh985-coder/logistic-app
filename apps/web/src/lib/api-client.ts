@@ -1,5 +1,5 @@
 const useProxy = process.env.NEXT_PUBLIC_USE_PROXY === 'true';
-const API_BASE_URL = useProxy
+export const API_BASE_URL = useProxy
   ? (typeof window !== 'undefined' ? '/api/backend' : (process.env.API_INTERNAL_URL || 'http://localhost:3001'))
   : (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001');
 

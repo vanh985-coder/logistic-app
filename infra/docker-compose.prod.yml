@@ -1,47 +1,132 @@
-version: '3.8'
+# Production stack — self-contained, does NOT need docker-compose.yml.
+#
+#   cp infra/.env.prod.example infra/.env.prod   # then fill in real secrets
+#   docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod up -d --build
+#
+# Only `web` (and optionally MinIO's S3 port for presigned downloads) is published.
+# Postgres, Redis, PgBouncer and the API stay on the internal Docker network.
+name: logix3d
+
+x-db-env: &db-env
+  POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+  POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
 
 services:
-  pgbouncer:
-    image: edoburu/pgbouncer:v1.22.0
-    container_name: logix3d-pgbouncer
+  postgres:
+    image: postgres:16-alpine
     restart: always
     environment:
-      DB_USER: ${POSTGRES_USER:-logix}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-logix_secret_dev}
+      <<: *db-env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.25.2-p0
+    restart: always
+    environment:
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_NAME: ${POSTGRES_DB:-logix3d_db}
+      DB_NAME: ${POSTGRES_DB}
       POOL_MODE: transaction
       MAX_CLIENT_CONN: 300
       DEFAULT_POOL_SIZE: 25
       MIN_POOL_SIZE: 5
       RESERVE_POOL_SIZE: 5
-      ADMIN_USERS: ${POSTGRES_USER:-logix}
-      AUTH_TYPE: plain
+      ADMIN_USERS: ${POSTGRES_USER}
+      AUTH_TYPE: scram-sha-256
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD}"]
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2023-11-20T22-40-07Z
+    restart: always
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+    # S3 API is published so browsers can open presigned download links
+    # (MINIO_PUBLIC_URL). Put it behind your HTTPS reverse proxy if the site uses HTTPS.
     ports:
-      - "6432:5432"
+      - "${MINIO_PUBLIC_BIND:-0.0.0.0}:${MINIO_PUBLIC_PORT:-9000}:9000"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot: applies Prisma migrations directly against Postgres (not via PgBouncer)
+  migrate:
+    build: &api-build
+      context: ..
+      dockerfile: apps/api/Dockerfile
+      target: production
+    image: logix3d-api:latest
+    restart: "no"
+    command: ["./node_modules/.bin/prisma", "migrate", "deploy"]
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public"
     depends_on:
       postgres:
         condition: service_healthy
 
   api:
-    build:
-      context: ..
-      dockerfile: apps/api/Dockerfile
-      target: production
+    build: *api-build
+    image: logix3d-api:latest
     restart: always
     environment:
       NODE_ENV: production
       PORT: 3001
-      DATABASE_URL: "postgresql://${POSTGRES_USER:-logix}:${POSTGRES_PASSWORD:-logix_secret_dev}@pgbouncer:5432/${POSTGRES_DB:-logix3d_db}?schema=public"
-      DIRECT_URL: "postgresql://${POSTGRES_USER:-logix}:${POSTGRES_PASSWORD:-logix_secret_dev}@postgres:5432/${POSTGRES_DB:-logix3d_db}?schema=public"
-      REDIS_URL: "redis://redis:6379"
+      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pgbouncer:5432/${POSTGRES_DB}?schema=public&pgbouncer=true"
+      REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379"
       MINIO_ENDPOINT: minio
       MINIO_PORT: 9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET_PROOFS: ${MINIO_BUCKET_PROOFS:-loading-proofs}
+      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      WEB_URL: ${WEB_URL:?set WEB_URL}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     depends_on:
-      - pgbouncer
-      - redis
-      - minio
+      migrate:
+        condition: service_completed_successfully
+      pgbouncer:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
 
   worker:
     build:
@@ -51,22 +136,33 @@ services:
     restart: always
     environment:
       NODE_ENV: production
-      DATABASE_URL: "postgresql://${POSTGRES_USER:-logix}:${POSTGRES_PASSWORD:-logix_secret_dev}@pgbouncer:5432/${POSTGRES_DB:-logix3d_db}?schema=public"
-      REDIS_URL: "redis://redis:6379"
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     depends_on:
-      - pgbouncer
-      - redis
+      redis:
+        condition: service_healthy
 
   web:
     build:
       context: ..
       dockerfile: apps/web/Dockerfile
       target: production
+      args:
+        NEXT_PUBLIC_USE_PROXY: "true"
+        API_INTERNAL_URL: http://api:3001
     restart: always
     ports:
-      - "3000:3000"
+      - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-3000}:3000"
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_URL: http://localhost:3001
+      API_INTERNAL_URL: http://api:3001
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:

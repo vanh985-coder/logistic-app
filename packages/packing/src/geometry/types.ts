@@ -87,7 +87,6 @@ export interface StrategyEvaluation {
     lifoCompliance: CriterionResult;
     consigneeAccessibility: CriterionResult;
   };
-  overallScore: number;
 }
 
 export interface PackingOptions {

@@ -45,7 +45,6 @@ export interface StrategyEvaluation {
   unplacedAlert: 'NONE' | 'WARNING' | 'CRITICAL';
   unplacedNote: string;
   criteria: EvaluationCriteriaMap | CriterionResult[];
-  overallScore: number;
 }
 
 export interface CenterOfGravity {

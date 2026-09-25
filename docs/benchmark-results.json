@@ -8,7 +8,7 @@
     "totalPackages": 1050,
     "containersNeeded": 2,
     "container1CogX": 49.87,
-    "totalTimeMs": 1503
+    "totalTimeMs": 1961
   },
   {
     "strategy": "B_EXPERIENCED",
@@ -19,7 +19,7 @@
     "totalPackages": 1050,
     "containersNeeded": 2,
     "container1CogX": 49.87,
-    "totalTimeMs": 1743
+    "totalTimeMs": 1497
   },
   {
     "strategy": "C_EXTREME_POINT",
@@ -30,7 +30,7 @@
     "totalPackages": 1050,
     "containersNeeded": 2,
     "container1CogX": 49.39,
-    "totalTimeMs": 54148
+    "totalTimeMs": 25560
   },
   {
     "strategy": "A_MANUAL",
@@ -41,7 +41,7 @@
     "totalPackages": 350,
     "containersNeeded": 4,
     "container1CogX": 49.9,
-    "totalTimeMs": 601
+    "totalTimeMs": 244
   },
   {
     "strategy": "B_EXPERIENCED",
@@ -52,7 +52,7 @@
     "totalPackages": 350,
     "containersNeeded": 4,
     "container1CogX": 49.05,
-    "totalTimeMs": 754
+    "totalTimeMs": 321
   },
   {
     "strategy": "C_EXTREME_POINT",
@@ -63,7 +63,7 @@
     "totalPackages": 350,
     "containersNeeded": 4,
     "container1CogX": 49.28,
-    "totalTimeMs": 15602
+    "totalTimeMs": 5661
   },
   {
     "strategy": "A_MANUAL",
@@ -74,7 +74,7 @@
     "totalPackages": 250,
     "containersNeeded": 5,
     "container1CogX": 40.85,
-    "totalTimeMs": 498
+    "totalTimeMs": 187
   },
   {
     "strategy": "B_EXPERIENCED",
@@ -85,17 +85,17 @@
     "totalPackages": 250,
     "containersNeeded": 4,
     "container1CogX": 53.08,
-    "totalTimeMs": 880
+    "totalTimeMs": 286
   },
   {
     "strategy": "C_EXTREME_POINT",
     "scenario": "3. Hàng khó (250 kiện, tỷ lệ cạnh > 5, 33% noStack)",
     "inputVolumeM3": 66.73,
-    "container1FillRatePct": 66.79,
-    "container1PlacedCount": 168,
+    "container1FillRatePct": 67.99,
+    "container1PlacedCount": 172,
     "totalPackages": 250,
     "containersNeeded": 2,
-    "container1CogX": 48.92,
-    "totalTimeMs": 10526
+    "container1CogX": 48.63,
+    "totalTimeMs": 5150
   }
 ]

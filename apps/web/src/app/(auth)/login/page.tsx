@@ -41,9 +41,15 @@ export default function LoginPage() {
       // Save credentials into unified AuthContext and storage
       login(data.accessToken, data.user);
 
-      // Route based on role
-      const targetDashboard = getDefaultDashboardForRole(data.user.role);
-      router.push(targetDashboard);
+      // Route based on redirect param or default dashboard for role
+      const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+      const redirectUrl = searchParams?.get('redirect');
+      if (redirectUrl && redirectUrl.startsWith('/') && !redirectUrl.startsWith('//')) {
+        router.push(redirectUrl);
+      } else {
+        const targetDashboard = getDefaultDashboardForRole(data.user.role);
+        router.push(targetDashboard);
+      }
     } catch (err: any) {
       setError(err.message || 'Đăng nhập không thành công. Vui lòng kiểm tra lại.');
     } finally {
